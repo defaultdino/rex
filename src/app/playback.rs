@@ -338,7 +338,7 @@ impl AppState {
         }
     }
 
-    /// makes an API request to Plex for the thumbbnail/cover art
+    /// makes an API request to Plex for the thumbnail/cover art
     /// of the currently played track if it exists
     pub(super) fn request_art(&mut self) {
         let thumb = self
