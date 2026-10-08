@@ -337,4 +337,22 @@ impl AppState {
             self.info("press q again to quit".into());
         }
     }
+
+    /// makes an API request to Plex for the thumbbnail/cover art
+    /// of the currently played track if it exists 
+    pub(super) fn request_art(&mut self) {
+        let thumb = self
+            .now
+            .track
+            .as_ref()
+            .map(|t| t.thumb.clone())
+            .filter(|t| !t.is_empty());
+        if self.art.as_ref().map(|(k, _)| k) == thumb.as_ref() {
+            return;
+        }
+        self.art = thumb.clone().map(|k| (k, None));
+        if let Some(thumb) = thumb {
+            let _ = self.api.try_send(ApiRequest::Art { thumb });
+        }
+    }
 }
