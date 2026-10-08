@@ -112,7 +112,7 @@ pub fn run(client: Arc<PlexClient>, cfg: &mut Config) -> Result<()> {
     spawn_tui(rx, api_tx, player_tx, mpris, &client, cfg)
 }
 
-/// runs the ui on main thread 
+/// runs the ui on main thread
 fn spawn_tui(
     rx: Receiver<AppEvent>,
     api_tx: SyncSender<ApiRequest>,
