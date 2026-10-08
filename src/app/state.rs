@@ -127,7 +127,6 @@ pub struct AppState {
     /// text being typed after `/`, `Some` while the search prompt is open
     pub search_input: Option<String>,
     pub quit: bool,
-    pub art: Option<(String, Option<image::RgbImage>)>,
 }
 
 impl AppState {
@@ -158,7 +157,6 @@ impl AppState {
             list_height: 10,
             search_input: None,
             quit: false,
-            art: None,
         };
         s.set_section(0);
         s
@@ -368,20 +366,6 @@ impl AppState {
             Action::Help => self.help = true,
             Action::DebugLine => self.debug_line = !self.debug_line,
             Action::Quit => self.request_quit(),
-        }
-    }
-
-    pub fn on_art(&mut self, thumb: String, result: Result<image::RgbImage, String>) {
-        let Some((key, img)) = &mut self.art else {
-            return;
-        };
-        if *key != thumb {
-            return;
-        }
-
-        match result {
-            Ok(i) => *img = Some(i),
-            Err(e) => tracing::warn!("cover art: {e}"),
         }
     }
 

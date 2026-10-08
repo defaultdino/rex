@@ -31,7 +31,6 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 unicode-width = "0.2.2"
 ureq = { version = "3.4.2", features = ["json"] }
 uuid = { version = "1.27.0", features = ["v4"] }
-image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4"

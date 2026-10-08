@@ -55,9 +55,6 @@ pub enum ApiRequest {
         query: String,
     },
     Report(Vec<Report>),
-    Art {
-        thumb: String,
-    },
 }
 
 pub enum PageData {
@@ -88,10 +85,6 @@ pub enum AppEvent {
     Signal,
     /// the server answered again at this address after rediscovery
     Reconnected(String),
-    Art {
-        thumb: String,
-        result: Result<image::RgbImage, String>,
-    },
 }
 
 pub fn run(client: Arc<PlexClient>, cfg: &mut Config) -> Result<()> {
@@ -168,7 +161,6 @@ fn event_loop(
         state.expire_message();
         if state.mpris_dirty {
             state.mpris_dirty = false;
-            state.request_art(); // fetch cover art for the TUI when track art is changed
             if let Some(m) = mpris.as_deref_mut() {
                 m.update(&state.now, client);
             }
@@ -207,7 +199,6 @@ fn handle(state: &mut AppState, ev: AppEvent) {
             state.info(format!("reconnected to the server at {url}"));
             state.server_url = Some(url);
         }
-        AppEvent::Art { thumb, result } => state.on_art(thumb, result),
     }
 }
 
@@ -351,10 +342,6 @@ impl ApiContext {
                 reports.iter().for_each(|r| send_report(c, r));
                 return None;
             }
-            ApiRequest::Art { thumb } => AppEvent::Art {
-                result: self.call(|| c.art(&thumb)).map_err(err),
-                thumb,
-            },
         })
     }
 }

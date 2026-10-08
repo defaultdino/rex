@@ -182,21 +182,6 @@ impl PlexClient {
             .and_then(|mut r| r.body_mut().read_json())
             .with_context(|| format!("POST {}", self.url(path)))
     }
-
-    pub fn art(&self, thumb: &str) -> Result<image::RgbImage> {
-        let query = [
-            ("width", "64"),
-            ("height", "64"),
-            ("minSize", "1"),
-            ("url", thumb),
-        ];
-        let bytes = self
-            .headers(self.agent.get(self.url("/photo/:/transcode")), &query)
-            .call()
-            .and_then(|r| r.into_body().read_to_vec())
-            .map_err(|e| describe(e, "GET cover art"))?;
-        Ok(image::load_from_memory(&bytes)?.to_rgb8())
-    }
 }
 
 fn retryable(e: &ureq::Error) -> bool {

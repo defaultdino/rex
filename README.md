@@ -6,8 +6,6 @@ There are a few packages available of this program for various linux flavours, j
 
 ## Usage
 
-If you want to specify configuration values yourself, have a look at the `config.example.toml`, edit the values, and move it to `~/.config/rex/config.toml` or `$XDG_CONFIG_HOME/rex/config.toml` and rex will read it on startup. `client_identifier` and `volume` values **must** be specified if you make your own `config.toml`.
-
 ```sh
 rex                   # sign in on first run, then open the player
 rex login             # sign in again and pick a server and music library
@@ -16,3 +14,9 @@ rex --log-level debug # more detail in ~/.local/state/rex/rex.*.log
 ```
 
 press `?` inside the player to see all keybindings
+
+## Configuration
+
+rex keeps its settings in `~/.config/rex/config.toml` (or `$XDG_CONFIG_HOME/rex/config.toml`). It creates the file on first run and `rex login` fills in the server details, so you only need to edit it to change things like `accent_color`. Every key is optional, and anything you leave out gets its default. `config.example.toml` describes each key, but don't copy it over as-is, since its tokens and server values are placeholders.
+
+**Edit the file while rex isn't running!** rex writes the volume and server address back to it on exit, which overwrites changes made in the meantime and drops any comments.

@@ -1,6 +1,7 @@
-# the device ID as Plex sees it, what shows
-# up under "now playin" dashboard as name
-client_identifier = "my-cool-pc"
+# random ID Plex uses to tell this install apart from your
+# other devices. changing it after login makes Plex see a
+# new device (the name it shows is your hostname)
+client_identifier = "0f8e6c1a-3b2d-4e5f-9a7b-1c2d3e4f5a6b"
 
 # the token retrieved from the plex.tv PIN
 # flow, only used to talk to plex.tv
@@ -8,24 +9,25 @@ token = "plex.tv login token"
 
 # the base URL of the server connection rex
 # last used successfully
-server_url = "192.168.0.103"
+server_url = "http://192.168.0.103:32400"
 
-# the server's machineIdentifier, which plex.tv
-# calls clientIdentifier in the resource list
-server_id = "hostname"
+# the server's `machineIdentifier`, which plex.tv
+# calls `clientIdentifier` in the resource list
+server_id = "4a1b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b"
 
-# this is what goes in X-Plex-Token header on
-# every reqyest to your connected server
+# this is what goes in the `X-Plex-Token` header on
+# every request to your connected server
 server_token = "X-Plex-Token"
 
-# the music library on your server. a server with only
-# one music library is chosen automatically
-music_section = "classical-music"
+# key of the music library on your server, as in
+# /library/sections/<key>. a server with only one
+# music library is chosen automatically
+music_section = "3"
 
-# configured playback volume
+# playback volume, in range 0.0 <= v <= 1.0
 volume = 0.8
 
-# this could be:
+# the color for focus, selection and highlights:
 # - a name ("cyan", "light-blue")
 # - a 256-color index ("208")
 # - hex ("#ff8800")
