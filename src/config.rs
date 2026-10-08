@@ -17,6 +17,8 @@ pub struct Config {
     pub server_token: Option<String>,
     pub music_section: Option<String>,
     pub volume: f32,
+    /// anything ratatui's `Color` parses: a name, a 256-colour index or `#rrggbb`
+    pub accent_color: Option<String>,
 }
 
 impl Default for Config {
@@ -29,6 +31,7 @@ impl Default for Config {
             server_token: None,
             music_section: None,
             volume: 0.8,
+            accent_color: None,
         }
     }
 }

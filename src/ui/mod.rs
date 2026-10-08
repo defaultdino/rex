@@ -39,16 +39,27 @@ pub fn draw(f: &mut Frame, s: &mut AppState) {
     }
 }
 
-fn selected_style(focused: bool) -> Style {
+fn selected_style(focused: bool, accent: Color) -> Style {
     if focused {
-        Style::new().add_modifier(Modifier::REVERSED)
+        // reversed rather than a fixed foreground so text stays readable whatever the accent
+        Style::new().fg(accent).add_modifier(Modifier::REVERSED)
     } else {
         Style::new().add_modifier(Modifier::BOLD)
     }
 }
 
+fn border_style(focused: bool, accent: Color) -> Style {
+    if focused {
+        Style::new().fg(accent)
+    } else {
+        Style::new()
+    }
+}
+
 fn draw_sidebar(f: &mut Frame, s: &AppState, area: Rect) {
-    let block = Block::bordered().title(" Library ");
+    let block = Block::bordered()
+        .title(" Library ")
+        .border_style(border_style(s.focus == Focus::Sidebar, s.accent));
     let inner = block.inner(area);
     f.render_widget(block, area);
     let width = inner.width as usize;
@@ -64,7 +75,7 @@ fn draw_sidebar(f: &mut Frame, s: &AppState, area: Rect) {
             };
             let line = Line::raw(fit(&text, "", width));
             if selected {
-                line.style(selected_style(s.focus == Focus::Sidebar))
+                line.style(selected_style(s.focus == Focus::Sidebar, s.accent))
             } else {
                 line
             }
@@ -100,7 +111,8 @@ fn draw_list(f: &mut Frame, s: &mut AppState, area: Rect) {
     };
     let block = Block::bordered()
         .title(format!(" {crumb} "))
-        .title_top(Line::raw(count).right_aligned());
+        .title_top(Line::raw(count).right_aligned())
+        .border_style(border_style(focused, s.accent));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -146,12 +158,14 @@ fn draw_list(f: &mut Frame, s: &mut AppState, area: Rect) {
                 && let SearchItem::Header(h) = &items[i]
             {
                 return Line::raw(fit(h, "", width))
-                    .style(Style::new().add_modifier(Modifier::BOLD));
+                    .style(Style::new().fg(s.accent).add_modifier(Modifier::BOLD));
             }
             let marker = if i == v.selected { "> " } else { "  " };
             let line = Line::raw(fit(&format!("{marker}{left}"), &right, width));
             if i == v.selected {
-                line.style(selected_style(focused))
+                line.style(selected_style(focused, s.accent))
+            } else if is_queue && s.queue.current == Some(i) {
+                line.style(Style::new().fg(s.accent))
             } else {
                 line
             }

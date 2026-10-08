@@ -24,3 +24,9 @@ music_section = "classical-music"
 
 # configured playback volume
 volume = 0.8
+
+# this could be:
+# - a name ("cyan", "light-blue")
+# - a 256-color index ("208")
+# - hex ("#ff8800")
+accent_color = "cyan"

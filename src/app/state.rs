@@ -1,6 +1,7 @@
 use std::sync::mpsc::SyncSender;
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::style::Color;
 use std::time::{Duration, Instant};
 
 use super::keys::Action;
@@ -119,6 +120,8 @@ pub struct AppState {
     pub stack: Vec<View>,
     pub help: bool,
     pub debug_line: bool,
+    /// colour for focus, selection and highlights, from `accent_color` in the config
+    pub accent: Color,
     pub message: Option<Message>,
     pub list_height: usize,
     /// text being typed after `/`, `Some` while the search prompt is open
@@ -150,6 +153,7 @@ impl AppState {
             stack: Vec::new(),
             help: false,
             debug_line: false,
+            accent: Color::Cyan,
             message: None,
             list_height: 10,
             search_input: None,
@@ -166,6 +170,15 @@ impl AppState {
 
     fn view_mut(&mut self) -> Option<&mut View> {
         self.stack.last_mut()
+    }
+
+    /// applies `accent_color` from the config, keeping the default and saying so when it won't parse
+    pub fn set_accent(&mut self, name: Option<&str>) {
+        let Some(name) = name else { return };
+        match name.parse() {
+            Ok(c) => self.accent = c,
+            Err(_) => self.error(format!("unknown accent_color {name:?}, using cyan")),
+        }
     }
 
     pub fn error(&mut self, text: String) {

@@ -99,32 +99,50 @@ pub fn run(client: Arc<PlexClient>, cfg: &mut Config) -> Result<()> {
         .music_section
         .clone()
         .context("no music section selected")?;
+
     let (tx, rx) = sync_channel(64);
     let (api_tx, api_rx) = sync_channel(16);
+
     let cache = config::dirs()?.cache_dir().join("stream");
     let (player_tx, player_rx) = player::spawn(client.clone(), cache, cfg.volume)?;
+
     spawn_api_workers(client.clone(), section, cfg.clone(), api_rx, tx.clone())?;
     spawn_forwarder(player_rx, tx.clone())?;
+
     #[cfg(unix)]
     spawn_signals(tx.clone())?;
+
     let mut mpris = Mpris::start(tx.clone());
     spawn_input(tx)?;
 
     let mut state = AppState::new(api_tx, player_tx.clone(), cfg.volume);
+    state.set_accent(cfg.accent_color.as_deref());
+
     // ratatui::init installs a panic hook that restores the terminal
     let mut terminal = ratatui::init();
     let result = event_loop(&mut terminal, &mut state, &rx, mpris.as_mut(), &client);
     ratatui::restore();
-    let _ = player_tx.send(PlayerCmd::Stop);
+
+    shutdown(&mut state, &player_tx, &client, cfg)?;
+    result
+}
+
+/// stops playback, sends the final playback reports and saves what the session changed
+fn shutdown(
+    state: &mut AppState,
+    player: &SyncSender<PlayerCmd>,
+    client: &PlexClient,
+    cfg: &mut Config,
+) -> Result<()> {
+    let _ = player.send(PlayerCmd::Stop);
     for r in state.reporter.stopped() {
-        send_report(&client, &r);
+        send_report(client, &r);
     }
     cfg.volume = state.now.volume;
     if let Some(url) = state.server_url.take() {
         cfg.server_url = Some(url);
     }
-    cfg.save()?;
-    result
+    cfg.save()
 }
 
 fn event_loop(
