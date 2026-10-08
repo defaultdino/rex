@@ -106,19 +106,38 @@ pub fn run(client: Arc<PlexClient>, cfg: &mut Config) -> Result<()> {
     #[cfg(unix)]
     spawn_signals(tx.clone())?;
 
-    let mut mpris = Mpris::start(tx.clone());
+    let mpris = Mpris::start(tx.clone());
     spawn_input(tx)?;
 
-    let mut state = AppState::new(api_tx, player_tx.clone(), cfg.volume);
-    state.set_accent(cfg.accent_color.as_deref());
+    spawn_tui(rx, api_tx, player_tx, mpris, &client, cfg)
+}
 
-    // ratatui::init installs a panic hook that restores the terminal
-    let mut terminal = ratatui::init();
-    let result = event_loop(&mut terminal, &mut state, &rx, mpris.as_mut(), &client);
-    ratatui::restore();
+/// runs the ui on main thread 
+fn spawn_tui(
+    rx: Receiver<AppEvent>,
+    api_tx: SyncSender<ApiRequest>,
+    player_tx: SyncSender<PlayerCmd>,
+    mut mpris: Option<Mpris>,
+    client: &PlexClient,
+    cfg: &mut Config,
+) -> Result<()> {
+    thread::scope(|s| {
+        let tui = thread::Builder::new()
+            .name("tui".into())
+            .spawn_scoped(s, move || {
+                let mut state = AppState::new(api_tx, player_tx.clone(), cfg.volume);
+                state.set_accent(cfg.accent_color.as_deref());
 
-    shutdown(&mut state, &player_tx, &client, cfg)?;
-    result
+                // ratatui::init installs a panic hook that restores the terminal
+                let mut terminal = ratatui::init();
+                let result = event_loop(&mut terminal, &mut state, &rx, mpris.as_mut(), client);
+                ratatui::restore();
+
+                shutdown(&mut state, &player_tx, client, cfg)?;
+                result
+            })?;
+        tui.join().unwrap_or_else(|e| std::panic::resume_unwind(e))
+    })
 }
 
 /// stops playback, sends the final playback reports and saves what the session changed
