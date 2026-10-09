@@ -367,6 +367,8 @@ impl AppState {
             Action::DebugLine => self.debug_line = !self.debug_line,
             Action::Quit => self.request_quit(),
             Action::Play => self.play(),
+            // routed through on_search_key while the prompt is open, never via lookup
+            Action::SearchSubmit | Action::SearchCancel => {}
         }
     }
 

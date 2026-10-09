@@ -32,9 +32,22 @@ pub enum Action {
     Help,
     DebugLine,
     Quit,
+    SearchSubmit,
+    SearchCancel,
 }
 
 impl Action {
+    pub fn describe_short(self) -> &'static str {
+        match self {
+            Action::Play => "play now",
+            Action::Remove => "remove",
+            Action::MoveDown => "move down",
+            Action::MoveUp => "move up",
+            Action::Clear => "clear",
+            _ => self.describe(),
+        }
+    }
+
     pub fn describe(self) -> &'static str {
         match self {
             Action::Down => "move down",
@@ -67,85 +80,100 @@ impl Action {
             Action::DebugLine => "memory usage",
             Action::Quit => "quit",
             Action::Play => "play now (replace queue)",
+            Action::SearchSubmit => "search",
+            Action::SearchCancel => "cancel",
         }
     }
 }
 
-pub struct Binding {
+pub struct KeyBinding {
     pub code: KeyCode,
     pub mods: KeyModifiers,
-    pub action: Action,
 }
 
-const fn key(c: char, action: Action) -> Binding {
+pub struct Binding {
+    pub keys: &'static [KeyBinding],
+    pub action: Action,
+    pub show_in_help: bool,
+}
+
+const fn bind(action: Action, keys: &'static [KeyBinding]) -> Binding {
     Binding {
-        code: KeyCode::Char(c),
-        mods: KeyModifiers::NONE,
+        keys,
         action,
+        show_in_help: true,
     }
 }
 
-const fn code(code: KeyCode, action: Action) -> Binding {
-    Binding {
+const fn hidden(mut binding: Binding) -> Binding {
+    binding.show_in_help = false;
+    binding
+}
+
+const fn key(c: char) -> KeyBinding {
+    KeyBinding {
+        code: KeyCode::Char(c),
+        mods: KeyModifiers::NONE,
+    }
+}
+
+const fn code(code: KeyCode) -> KeyBinding {
+    KeyBinding {
         code,
         mods: KeyModifiers::NONE,
-        action,
     }
 }
 
-const fn ctrl(c: char, action: Action) -> Binding {
-    Binding {
+const fn ctrl(c: char) -> KeyBinding {
+    KeyBinding {
         code: KeyCode::Char(c),
         mods: KeyModifiers::CONTROL,
-        action,
     }
 }
 
 pub const BINDINGS: &[Binding] = &[
-    key('j', Action::Down),
-    code(KeyCode::Down, Action::Down),
-    key('k', Action::Up),
-    code(KeyCode::Up, Action::Up),
-    key('g', Action::Top),
-    code(KeyCode::Home, Action::Top),
-    key('G', Action::Bottom),
-    code(KeyCode::End, Action::Bottom),
-    ctrl('d', Action::HalfDown),
-    code(KeyCode::PageDown, Action::HalfDown),
-    ctrl('u', Action::HalfUp),
-    code(KeyCode::PageUp, Action::HalfUp),
-    key('l', Action::Open),
-    code(KeyCode::Right, Action::Open),
-    code(KeyCode::Enter, Action::Open),
-    key('h', Action::Back),
-    code(KeyCode::Left, Action::Back),
-    code(KeyCode::Backspace, Action::Back),
-    code(KeyCode::Tab, Action::ToggleFocus),
-    key('1', Action::Jump(0)),
-    key('2', Action::Jump(1)),
-    key('3', Action::Jump(2)),
-    key('4', Action::Jump(3)),
-    key('5', Action::Jump(4)),
-    key('/', Action::Search),
-    key(' ', Action::PlayPause),
-    key('>', Action::Next),
-    key('<', Action::Previous),
-    key('.', Action::SeekForward),
-    key(',', Action::SeekBack),
-    key('+', Action::VolumeUp),
-    key('-', Action::VolumeDown),
-    key('s', Action::Shuffle),
-    key('r', Action::Repeat),
-    key('a', Action::Append),
-    key('n', Action::PlayNext),
-    key('d', Action::Remove),
-    key('J', Action::MoveDown),
-    key('K', Action::MoveUp),
-    key('D', Action::Clear),
-    key('?', Action::Help),
-    code(KeyCode::F(12), Action::DebugLine),
-    key('q', Action::Quit),
-    key('p', Action::Play),
+    bind(Action::Down, &[key('j'), code(KeyCode::Down)]),
+    bind(Action::Up, &[key('k'), code(KeyCode::Up)]),
+    bind(Action::Top, &[key('g'), code(KeyCode::Home)]),
+    bind(Action::Bottom, &[key('G'), code(KeyCode::End)]),
+    bind(Action::HalfDown, &[ctrl('d'), code(KeyCode::PageDown)]),
+    bind(Action::HalfUp, &[ctrl('u'), code(KeyCode::PageUp)]),
+    bind(
+        Action::Open,
+        &[key('l'), code(KeyCode::Right), code(KeyCode::Enter)],
+    ),
+    bind(
+        Action::Back,
+        &[key('h'), code(KeyCode::Left), code(KeyCode::Backspace)],
+    ),
+    bind(Action::ToggleFocus, &[code(KeyCode::Tab)]),
+    bind(Action::Jump(0), &[key('1')]),
+    bind(Action::Jump(1), &[key('2')]),
+    bind(Action::Jump(2), &[key('3')]),
+    bind(Action::Jump(3), &[key('4')]),
+    bind(Action::Jump(4), &[key('5')]),
+    hidden(bind(Action::Search, &[key('/')])),
+    bind(Action::PlayPause, &[key(' ')]),
+    bind(Action::Next, &[key('>')]),
+    bind(Action::Previous, &[key('<')]),
+    bind(Action::SeekForward, &[key('.')]),
+    bind(Action::SeekBack, &[key(',')]),
+    bind(Action::VolumeUp, &[key('+')]),
+    bind(Action::VolumeDown, &[key('-')]),
+    bind(Action::Shuffle, &[key('s')]),
+    bind(Action::Repeat, &[key('r')]),
+    hidden(bind(Action::Append, &[key('a')])),
+    hidden(bind(Action::PlayNext, &[key('n')])),
+    hidden(bind(Action::Remove, &[key('d')])),
+    hidden(bind(Action::MoveDown, &[key('J')])),
+    hidden(bind(Action::MoveUp, &[key('K')])),
+    hidden(bind(Action::Clear, &[key('D')])),
+    hidden(bind(Action::Help, &[key('?')])),
+    bind(Action::DebugLine, &[code(KeyCode::F(12))]),
+    bind(Action::Quit, &[key('q')]),
+    hidden(bind(Action::Play, &[key('p')])),
+    hidden(bind(Action::SearchSubmit, &[code(KeyCode::Enter)])),
+    hidden(bind(Action::SearchCancel, &[code(KeyCode::Esc)])),
 ];
 
 pub fn lookup(k: KeyEvent) -> Option<Action> {
@@ -156,12 +184,16 @@ pub fn lookup(k: KeyEvent) -> Option<Action> {
     }
     BINDINGS
         .iter()
-        .find(|b| b.code == k.code && b.mods == mods)
+        .find(|b| b.keys.iter().any(|kb| kb.code == k.code && kb.mods == mods))
         .map(|b| b.action)
 }
 
 pub fn key_name(b: &Binding) -> String {
-    let name = match b.code {
+    b.keys.iter().map(key_label).collect::<Vec<_>>().join(" ")
+}
+
+fn key_label(k: &KeyBinding) -> String {
+    let name = match k.code {
         KeyCode::Char(' ') => "Space".into(),
         KeyCode::Char(c) => c.to_string(),
         KeyCode::Down => "↓".into(),
@@ -179,7 +211,7 @@ pub fn key_name(b: &Binding) -> String {
         KeyCode::F(n) => format!("F{n}"),
         other => format!("{other:?}"),
     };
-    if b.mods.contains(KeyModifiers::CONTROL) {
+    if k.mods.contains(KeyModifiers::CONTROL) {
         format!("Ctrl-{name}")
     } else {
         name
