@@ -9,6 +9,7 @@ use crate::config::{self, Config};
 mod debug;
 mod login;
 mod logout;
+mod switch;
 mod tui;
 
 #[derive(Parser, Debug)]
@@ -19,6 +20,8 @@ enum Subcommand {
     Logout(self::logout::Options),
     /// Query the Plex server without the TUI
     Debug(self::debug::Options),
+    /// Switch media libraries
+    Switch(self::switch::Options),
 }
 
 #[derive(Parser, Debug)]
@@ -37,6 +40,7 @@ impl Options {
             Some(S::Login(c)) => c.run(cfg),
             Some(S::Logout(c)) => c.run(cfg),
             Some(S::Debug(c)) => c.run(cfg),
+            Some(S::Switch(c)) => c.run(cfg),
             None => self::tui::Options::default().run(cfg),
         }
     }
