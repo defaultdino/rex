@@ -9,6 +9,7 @@ There are a few packages available of this program for various linux flavours, j
 ```sh
 rex                   # sign in on first run, then open the player
 rex login             # sign in again and pick a server and music library
+rex switch            # switch music libraries/sections
 rex logout            # forget the saved tokens
 rex --log-level debug # more detail in ~/.local/state/rex/rex.*.log
 ```

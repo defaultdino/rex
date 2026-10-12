@@ -88,29 +88,45 @@ pub fn login(cfg: &Config) -> Result<String> {
     bail!("timed out waiting for sign-in")
 }
 
-/// Connects to saved server and only runs discovery again
-/// if plex.tv is reachable
 pub fn connect(cfg: &mut Config) -> Result<PlexClient> {
+    let client = connect_server(cfg)?;
+    if cfg.music_section.is_none() {
+        pick_section(&client, cfg, None)?;
+    }
+    Ok(client)
+}
+
+pub fn switch_section(cfg: &mut Config, pick: Option<usize>) -> Result<String> {
+    let client = connect_server(cfg)?;
+    pick_section(&client, cfg, pick)
+}
+
+fn connect_server(cfg: &mut Config) -> Result<PlexClient> {
     if let Some(url) = cfg.server_url.clone() {
         let token = cfg
             .server_token
             .clone()
             .or_else(|| cfg.token.clone())
             .context("server_url is set but no token; run `rex login`")?;
+
         if probe(&url, cfg.server_id.as_deref()) {
-            let client = PlexClient::new(&url, &token, &cfg.client_identifier, API_TIMEOUT);
-            ensure_section(&client, cfg)?;
-            return Ok(client);
+            return Ok(PlexClient::new(
+                &url,
+                &token,
+                &cfg.client_identifier,
+                API_TIMEOUT,
+            ));
         }
-        warn!("saved server {url} unreachable, rediscovering");
+
+        warn!("the saved server {url} is unreachable, rediscovering");
     }
+
     let account = cfg
         .token
         .clone()
         .context("not logged in; run `rex login`")?;
-    let client = discover(cfg, &account)?;
-    ensure_section(&client, cfg)?;
-    Ok(client)
+
+    discover(cfg, &account)
 }
 
 fn probe(uri: &str, expected_id: Option<&str>) -> bool {
@@ -235,17 +251,24 @@ fn discover(cfg: &mut Config, account: &str) -> Result<PlexClient> {
     ))
 }
 
-fn ensure_section(client: &PlexClient, cfg: &mut Config) -> Result<()> {
-    if cfg.music_section.is_some() {
-        return Ok(());
-    }
+/// saves the chosen music library and returns its title
+fn pick_section(client: &PlexClient, cfg: &mut Config, pick: Option<usize>) -> Result<String> {
     let mut sections = client.music_sections()?;
     if sections.is_empty() {
         bail!("server has no music library");
     }
-    let labels: Vec<String> = sections.iter().map(|s| s.title.clone()).collect();
-    cfg.music_section = Some(sections.swap_remove(choose("Music library", &labels)?).key);
-    cfg.save()
+    let i = match pick {
+        Some(n) if (1..=sections.len()).contains(&n) => n - 1,
+        Some(n) => bail!("no music library {n}; this server has {}", sections.len()),
+        None => {
+            let labels: Vec<String> = sections.iter().map(|s| s.title.clone()).collect();
+            choose("Music library", &labels)?
+        }
+    };
+    let sec = sections.swap_remove(i);
+    cfg.music_section = Some(sec.key);
+    cfg.save()?;
+    Ok(sec.title)
 }
 
 fn choose(what: &str, labels: &[String]) -> Result<usize> {
