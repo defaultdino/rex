@@ -25,7 +25,7 @@ pub fn draw_minimized_player(f: &mut Frame, s: &AppState, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
     let width = inner.width as usize;
-    let now = &s.now;
+    let now = &s.playback.now;
 
     let first = match &now.track {
         None => fit("■ not playing", "", width),
@@ -52,10 +52,10 @@ pub fn draw_minimized_player(f: &mut Frame, s: &AppState, area: Rect) {
         right.push_str(&format!(" {}", crate::fmt_ms(d)));
     }
     right.push_str(&format!("  vol {:.0}%", now.volume * 100.0));
-    if s.queue.shuffle {
+    if s.playback.queue.shuffle {
         right.push_str(" ⇄");
     }
-    match s.queue.repeat {
+    match s.playback.queue.repeat {
         Repeat::Off => {}
         Repeat::All => right.push_str(" ↻"),
         Repeat::One => right.push_str(" ↻1"),
@@ -86,7 +86,7 @@ pub fn draw_maximized_player(f: &mut Frame, s: &AppState, area: Rect) {
     let block = Block::bordered().title(player_title("minimize", s.accent));
     f.render_widget(&block, area);
 
-    match &s.now.track {
+    match &s.playback.now.track {
         Some(_) => draw_non_empty_state(f, block.inner(area), s),
         None => draw_empty_state(f, block.inner(area)),
     }
@@ -102,7 +102,7 @@ fn draw_empty_state(f: &mut Frame, area: Rect) {
 }
 
 fn draw_non_empty_state(f: &mut Frame, area: Rect, s: &AppState) {
-    let now = &s.now;
+    let now = &s.playback.now;
     let area_centered = area.inner(Margin::new(10, 1));
 
     let [cover_art, artist_info, progress_bar, actions] = Layout::vertical([
@@ -117,12 +117,13 @@ fn draw_non_empty_state(f: &mut Frame, area: Rect, s: &AppState) {
     draw_cover_art(f, cover_art, s);
     draw_info(f, artist_info, now);
     draw_progress_bar(f, progress_bar, now, s.accent);
-    draw_actions(f, actions, &s.now, &s.queue, s.accent)
+    draw_actions(f, actions, &s.playback.now, &s.playback.queue, s.accent)
 }
 
 fn draw_cover_art(f: &mut Frame, area: Rect, s: &AppState) {
-    let thumb = s.now.track.as_ref().map(|t| t.thumb.as_str());
+    let thumb = s.playback.now.track.as_ref().map(|t| t.thumb.as_str());
     let art = s
+        .playback
         .cover
         .as_ref()
         .filter(|c| Some(c.thumb.as_str()) == thumb)

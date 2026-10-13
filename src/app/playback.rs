@@ -1,21 +1,75 @@
-use std::sync::mpsc::TrySendError;
-use std::time::{Duration, Instant};
+use std::sync::mpsc::{SyncSender, TrySendError};
+use std::time::Instant;
 
+use image::RgbImage;
 use souvlaki::{MediaControlEvent, SeekDirection};
 use tracing::warn;
 
-use super::ApiRequest;
-use super::reporting::Report;
-use super::state::{AppState, ListKind};
+use super::now_playing::NowPlaying;
+use super::queue::Queue;
+use super::reporting::{Report, Reporter};
+use super::state::Message;
+use super::{AddMode, ApiRequest, TrackSource};
 use crate::audio::player::{PlayerCmd, PlayerEvent};
+use crate::plex::models::Track;
 
 const ENQUEUE_BEFORE_END_MS: u64 = 10_000;
 const RESTART_AFTER_MS: u64 = 3_000;
 const SEEK_STEP_MS: i64 = 10_000;
 const VOLUME_STEP: f32 = 0.05;
-const QUIT_CONFIRM: Duration = Duration::from_secs(3);
 
-impl AppState {
+/// cover art for the thumb of the track it was fetched for
+pub struct Cover {
+    pub thumb: String,
+    pub art: Option<RgbImage>,
+}
+
+/// the queue, what is playing, and the player thread that plays it
+pub struct Playback {
+    api: SyncSender<ApiRequest>,
+    player: SyncSender<PlayerCmd>,
+    pub queue: Queue,
+    pub now: NowPlaying,
+    pub cover: Option<Cover>,
+    loading: Option<(u64, String)>,
+    enqueued: Option<(u64, String)>,
+    failures: usize,
+    pub(super) reporter: Reporter,
+    /// now-playing changed in a way media widgets should hear about
+    pub media_controls_dirty: bool,
+    /// status line message, moved to the app's message after each event
+    pub(super) notice: Option<Message>,
+}
+
+impl Playback {
+    pub fn new(api: SyncSender<ApiRequest>, player: SyncSender<PlayerCmd>, volume: f32) -> Self {
+        Self {
+            api,
+            player,
+            queue: Queue::default(),
+            now: NowPlaying {
+                volume,
+                ..Default::default()
+            },
+            cover: None,
+            loading: None,
+            enqueued: None,
+            failures: 0,
+            reporter: Reporter::default(),
+            media_controls_dirty: false,
+            notice: None,
+        }
+    }
+
+    fn error(&mut self, text: String) {
+        warn!("{text}");
+        self.notice = Some(Message::error(text));
+    }
+
+    fn info(&mut self, text: String) {
+        self.notice = Some(Message::info(text));
+    }
+
     /// never blocks the UI: the player thread can be stuck in a stalled read for a while
     fn send(&mut self, cmd: PlayerCmd) {
         match self.player.try_send(cmd) {
@@ -40,7 +94,7 @@ impl AppState {
         }
         let stopped = self.reporter.stopped();
         self.report(stopped);
-        self.media_integration_dirty = true;
+        self.media_controls_dirty = true;
         let Some(e) = self.queue.entries.get(i) else {
             return;
         };
@@ -55,10 +109,16 @@ impl AppState {
         self.send(PlayerCmd::Load(track));
     }
 
+    /// replaces the queue with `tracks` and plays from `start`
+    pub fn play_tracks(&mut self, tracks: Vec<Track>, start: usize) {
+        self.queue.replace(tracks, start);
+        self.play_index(self.queue.current.unwrap_or(0));
+    }
+
     pub fn stop(&mut self) {
         let stopped = self.reporter.stopped();
         self.report(stopped);
-        self.media_integration_dirty = true;
+        self.media_controls_dirty = true;
         self.send(PlayerCmd::Stop);
         self.now.track = None;
         self.now.position_ms = 0;
@@ -78,7 +138,7 @@ impl AppState {
         self.now.paused = !self.now.paused;
         let reports = self.reporter.set_paused(self.now.paused, Instant::now());
         self.report(reports);
-        self.media_integration_dirty = true;
+        self.media_controls_dirty = true;
         self.send(if self.now.paused {
             PlayerCmd::Pause
         } else {
@@ -114,7 +174,7 @@ impl AppState {
             None => ms,
         };
         self.now.position_ms = target;
-        self.media_integration_dirty = true;
+        self.media_controls_dirty = true;
         self.send(PlayerCmd::Seek(target));
     }
 
@@ -139,7 +199,7 @@ impl AppState {
     }
 
     /// keeps the player's pre-opened next track in line with the queue
-    pub fn sync_next(&mut self) {
+    fn sync_next(&mut self) {
         let due = self.now.track.as_ref().is_some_and(|t| {
             t.duration_ms
                 .is_none_or(|d| d.saturating_sub(self.now.position_ms) <= ENQUEUE_BEFORE_END_MS)
@@ -193,7 +253,7 @@ impl AppState {
                 }
                 let reports = self.reporter.started(&t, Instant::now());
                 self.report(reports);
-                self.media_integration_dirty = true;
+                self.media_controls_dirty = true;
                 self.now.track = Some(t);
                 self.now.position_ms = 0;
                 self.now.buffering = false;
@@ -203,7 +263,7 @@ impl AppState {
             PlayerEvent::TrackEnded(_) => {
                 let reports = self.reporter.ended();
                 self.report(reports);
-                self.media_integration_dirty = true;
+                self.media_controls_dirty = true;
                 // a pre-opened successor is about to report TrackStarted
                 if self.enqueued.is_some() {
                     return;
@@ -255,14 +315,13 @@ impl AppState {
                     self.now.paused = true;
                     let reports = self.reporter.set_paused(true, Instant::now());
                     self.report(reports);
-                    self.media_integration_dirty = true;
+                    self.media_controls_dirty = true;
                 }
             }
         }
     }
 
-    /// media keys and desktop widgets
-    pub fn on_media_integration(&mut self, ev: MediaControlEvent) {
+    pub fn on_media_control(&mut self, ev: MediaControlEvent) {
         let playing = self.now.track.is_some() && !self.now.paused;
         match ev {
             MediaControlEvent::Play if !playing => self.toggle_pause(),
@@ -282,26 +341,58 @@ impl AppState {
             }
             MediaControlEvent::SetPosition(p) => self.seek_to(p.0.as_millis() as u64),
             MediaControlEvent::SetVolume(v) => self.set_volume(v as f32),
-            MediaControlEvent::Quit => self.quit = true,
             _ => {}
         }
     }
 
-    fn in_queue_view(&self) -> bool {
-        matches!(self.view().map(|v| &v.kind), Some(ListKind::Queue))
+    pub fn add_tracks(&mut self, mode: AddMode, tracks: Vec<Track>) {
+        let n = tracks.len();
+        match mode {
+            AddMode::Append => self.queue.append(tracks),
+            AddMode::Next => self.queue.play_next(tracks),
+            AddMode::PlayFromStart => {
+                self.queue.replace(tracks, 0);
+                return self.play_index(0);
+            }
+            AddMode::PlayFrom(rk) => {
+                let start = tracks.iter().position(|t| t.rating_key == rk).unwrap_or(0);
+                return self.play_tracks(tracks, start);
+            }
+        }
+        let what = if n == 1 {
+            "track".to_owned()
+        } else {
+            format!("{n} tracks")
+        };
+        let verb = if matches!(mode, AddMode::Next) {
+            "playing next:"
+        } else {
+            "added"
+        };
+        self.info(format!("{verb} {what}"));
+        self.sync_next();
     }
 
-    pub fn queue_edit(&mut self, f: impl FnOnce(&mut Self, usize)) {
-        if !self.in_queue_view() {
-            return;
+    pub fn add_source(&mut self, source: TrackSource, mode: AddMode) {
+        if self
+            .api
+            .try_send(ApiRequest::Tracks { source, mode })
+            .is_err()
+        {
+            self.error("busy, try again".into());
         }
-        let sel = self.view().map_or(0, |v| v.selected);
-        f(self, sel);
-        let last = self.queue.len().saturating_sub(1);
-        if let Some(v) = self.stack.last_mut() {
-            v.selected = v.selected.min(last);
+    }
+
+    /// queues the whole album of `track` and starts at it
+    pub fn play_from_album(&mut self, track: Track) {
+        let start = track.rating_key.clone();
+        if track.parent_rating_key.is_empty() {
+            return self.add_tracks(AddMode::PlayFrom(start), vec![track]);
         }
-        self.sync_next();
+        self.add_source(
+            TrackSource::Album(track.parent_rating_key),
+            AddMode::PlayFrom(start),
+        );
     }
 
     pub fn remove_at(&mut self, i: usize) {
@@ -312,14 +403,13 @@ impl AppState {
                 self.stop();
             }
         }
+        self.sync_next();
     }
 
-    pub fn move_at(&mut self, i: usize, down: bool) {
-        if let Some(j) = self.queue.move_entry(i, down)
-            && let Some(v) = self.stack.last_mut()
-        {
-            v.selected = j;
-        }
+    pub fn move_at(&mut self, i: usize, down: bool) -> usize {
+        let j = self.queue.move_entry(i, down).unwrap_or(i);
+        self.sync_next();
+        j
     }
 
     pub fn clear_queue(&mut self) {
@@ -327,14 +417,29 @@ impl AppState {
         self.stop();
     }
 
-    /// quits right away unless something is playing, then asks for a second `q`
-    pub fn request_quit(&mut self) {
-        let playing = self.now.track.is_some() && !self.now.paused;
-        if !playing || self.quit_armed.is_some_and(|t| t.elapsed() < QUIT_CONFIRM) {
-            self.quit = true;
-        } else {
-            self.quit_armed = Some(Instant::now());
-            self.info("press q again to quit".into());
+    pub fn sync_cover(&mut self) {
+        let Some(t) = &self.now.track else { return };
+        if t.thumb.is_empty() || self.cover.as_ref().is_some_and(|c| c.thumb == t.thumb) {
+            return;
+        }
+        let thumb = t.thumb.clone();
+        self.cover = Some(Cover {
+            thumb: thumb.clone(),
+            art: None,
+        });
+        if self.api.try_send(ApiRequest::Cover { thumb }).is_err() {
+            warn!("cover request dropped, API queue full");
+            self.cover = None;
+        }
+    }
+
+    pub fn on_cover(&mut self, thumb: String, result: Result<RgbImage, String>) {
+        let Some(c) = self.cover.as_mut().filter(|c| c.thumb == thumb) else {
+            return;
+        };
+        match result {
+            Ok(img) => c.art = Some(img),
+            Err(e) => warn!("cover art: {e}"),
         }
     }
 }

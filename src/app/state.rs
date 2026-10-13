@@ -1,27 +1,20 @@
 use std::sync::mpsc::SyncSender;
-
-use image::RgbImage;
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::style::Color;
 use std::time::{Duration, Instant};
 
-use super::keys::Action;
-use super::queue::Queue;
-use super::reporting::Reporter;
-use super::{AddMode, ApiRequest, PageData, TrackSource};
-use crate::app::keys::{
-    GLOBAL_PLAYER_KEYS, HELP_KEYS, LIST_KEYS, MAXIMIZED_PLAYER_KEYS, NAV_KEYS, QUEUE_KEYS,
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::style::Color;
+
+use super::browser::{Browser, Items, ListKind, SearchItem};
+use super::keys::{
+    Action, GLOBAL_PLAYER_KEYS, HELP_KEYS, LIST_KEYS, MAXIMIZED_PLAYER_KEYS, NAV_KEYS, QUEUE_KEYS,
     SEARCH_INPUT_KEYS,
 };
-use crate::app::now_playing::NowPlaying;
+use super::playback::Playback;
+use super::{AddMode, ApiRequest, TrackSource};
 use crate::audio::player::PlayerCmd;
-use crate::plex::api::SearchResults;
-use crate::plex::models::{Album, Artist, Playlist, Track};
 
-const PREFETCH_MARGIN: usize = 50;
 const MESSAGE_TTL: Duration = Duration::from_secs(5);
-
-pub const SECTIONS: [&str; 5] = ["Artists", "Albums", "Playlists", "Search", "Queue"];
+const QUIT_CONFIRM: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -42,148 +35,59 @@ pub enum Screen {
     Player,
 }
 
-#[derive(Debug, Clone)]
-pub enum ListKind {
-    Artists,
-    Albums,
-    Playlists,
-    ArtistAlbums(String),
-    AlbumTracks(String),
-    PlaylistTracks(String),
-    Search,
-    Queue,
-}
-
-pub enum Items {
-    Artists(Vec<Artist>),
-    Albums(Vec<Album>),
-    Tracks(Vec<Track>),
-    Playlists(Vec<Playlist>),
-    Search(Vec<SearchItem>),
-}
-
-pub enum SearchItem {
-    Header(String),
-    Artist(Artist),
-    Album(Album),
-    Track(Track),
-}
-
-impl Items {
-    pub fn len(&self) -> usize {
-        match self {
-            Items::Artists(v) => v.len(),
-            Items::Albums(v) => v.len(),
-            Items::Tracks(v) => v.len(),
-            Items::Playlists(v) => v.len(),
-            Items::Search(v) => v.len(),
-        }
-    }
-}
-
-pub struct View {
-    pub id: u64,
-    pub kind: ListKind,
-    pub title: String,
-    pub items: Items,
-    pub total: Option<u32>,
-    pub loading: bool,
-    pub selected: usize,
-    pub offset: usize,
-}
-
-impl View {
-    fn fetchable(&self) -> bool {
-        !matches!(self.kind, ListKind::Search | ListKind::Queue)
-    }
-
-    fn complete(&self) -> bool {
-        !self.fetchable() || self.total.is_some_and(|t| self.items.len() >= t as usize)
-    }
-}
-
-/// cover art for the thumb of the track it was fetched for
-pub struct Cover {
-    pub thumb: String,
-    /// `None` while loading or when the art could not be fetched or decoded
-    pub art: Option<RgbImage>,
-}
-
 pub struct Message {
     pub text: String,
     pub at: Instant,
     pub error: bool,
 }
 
+impl Message {
+    pub fn error(text: String) -> Self {
+        Self {
+            text,
+            at: Instant::now(),
+            error: true,
+        }
+    }
+
+    pub fn info(text: String) -> Self {
+        Self {
+            text,
+            at: Instant::now(),
+            error: false,
+        }
+    }
+}
+
 pub struct AppState {
     pub screen: Screen,
     pub modal: Option<Modal>,
-    pub(super) api: SyncSender<ApiRequest>,
-    pub(super) player: SyncSender<PlayerCmd>,
-    next_id: u64,
-    pub queue: Queue,
-    pub now: NowPlaying,
-    pub cover: Option<Cover>,
-    /// queue entry id and rating key of the last `Load` not yet confirmed by `TrackStarted`
-    pub(super) loading: Option<(u64, String)>,
-    /// queue entry id and rating key handed to the player as the gapless successor
-    pub(super) enqueued: Option<(u64, String)>,
-    pub(super) failures: usize,
-    pub(super) quit_armed: Option<Instant>,
-    pub(super) reporter: Reporter,
-    /// now-playing changed in a way media widgets should hear about
-    pub media_integration_dirty: bool,
+    pub browser: Browser,
+    pub playback: Playback,
+    quit_armed: Option<Instant>,
     /// new server address found by rediscovery, saved to the config on exit
     pub server_url: Option<String>,
-    pub section: usize,
-    pub stack: Vec<View>,
     pub debug_line: bool,
     /// colour for focus, selection and highlights, from `accent_color` in the config
     pub accent: Color,
     pub message: Option<Message>,
-    pub list_height: usize,
     pub quit: bool,
 }
 
 impl AppState {
     pub fn new(api: SyncSender<ApiRequest>, player: SyncSender<PlayerCmd>, volume: f32) -> Self {
-        let mut s = Self {
+        Self {
             screen: Screen::Browse(Focus::List),
             modal: None,
-            api,
-            player,
-            next_id: 0,
-            queue: Queue::default(),
-            now: NowPlaying {
-                volume,
-                ..Default::default()
-            },
-            cover: None,
-            loading: None,
-            enqueued: None,
-            failures: 0,
+            browser: Browser::new(api.clone()),
+            playback: Playback::new(api, player, volume),
             quit_armed: None,
-            reporter: Reporter::default(),
-            media_integration_dirty: false,
             server_url: None,
-            section: 0,
-            stack: Vec::new(),
             debug_line: false,
             accent: Color::Cyan,
             message: None,
-            list_height: 10,
             quit: false,
-        };
-        s.set_section(0);
-        s
-    }
-
-    pub fn view(&self) -> Option<&View> {
-        self.stack.last()
-    }
-
-    fn view_mut(&mut self) -> Option<&mut View> {
-        self.stack.last_mut()
+        }
     }
 
     /// applies `accent_color` from the config, keeping the default and saying so when it won't parse
@@ -197,19 +101,11 @@ impl AppState {
 
     pub fn error(&mut self, text: String) {
         tracing::warn!("{text}");
-        self.message = Some(Message {
-            text,
-            at: Instant::now(),
-            error: true,
-        });
+        self.message = Some(Message::error(text));
     }
 
     pub fn info(&mut self, text: String) {
-        self.message = Some(Message {
-            text,
-            at: Instant::now(),
-            error: false,
-        });
+        self.message = Some(Message::info(text));
     }
 
     /// how long until the transient message should disappear
@@ -219,33 +115,6 @@ impl AppState {
             .map(|m| MESSAGE_TTL.saturating_sub(m.at.elapsed()))
     }
 
-    /// requests the cover of the current track's thumb unless it is already loaded or loading
-    pub fn sync_cover(&mut self) {
-        let Some(t) = &self.now.track else { return };
-        if t.thumb.is_empty() || self.cover.as_ref().is_some_and(|c| c.thumb == t.thumb) {
-            return;
-        }
-        let thumb = t.thumb.clone();
-        self.cover = Some(Cover {
-            thumb: thumb.clone(),
-            art: None,
-        });
-        if self.api.try_send(ApiRequest::Cover { thumb }).is_err() {
-            tracing::warn!("cover request dropped, API queue full");
-            self.cover = None;
-        }
-    }
-
-    pub fn on_cover(&mut self, thumb: String, result: Result<RgbImage, String>) {
-        let Some(c) = self.cover.as_mut().filter(|c| c.thumb == thumb) else {
-            return;
-        };
-        match result {
-            Ok(img) => c.art = Some(img),
-            Err(e) => tracing::warn!("cover art: {e}"),
-        }
-    }
-
     pub fn expire_message(&mut self) {
         if self.next_deadline().is_some_and(|d| d.is_zero()) {
             self.message = None;
@@ -253,114 +122,12 @@ impl AppState {
     }
 
     /// number of rows in the current list (the queue view renders the queue itself)
-    pub fn list_len(&self) -> usize {
-        match self.view() {
-            Some(v) if matches!(v.kind, ListKind::Queue) => self.queue.len(),
+    fn list_len(&self) -> usize {
+        match self.browser.view() {
+            Some(v) if matches!(v.kind, ListKind::Queue) => self.playback.queue.len(),
             Some(v) => v.items.len(),
             None => 0,
         }
-    }
-
-    fn new_view(&mut self, kind: ListKind, title: String) -> View {
-        self.next_id += 1;
-        let items = match kind {
-            ListKind::Artists => Items::Artists(Vec::new()),
-            ListKind::Albums | ListKind::ArtistAlbums(_) => Items::Albums(Vec::new()),
-            ListKind::Playlists => Items::Playlists(Vec::new()),
-            ListKind::AlbumTracks(_) | ListKind::PlaylistTracks(_) | ListKind::Queue => {
-                Items::Tracks(Vec::new())
-            }
-            ListKind::Search => Items::Search(Vec::new()),
-        };
-        View {
-            id: self.next_id,
-            kind,
-            title,
-            items,
-            total: None,
-            loading: false,
-            selected: 0,
-            offset: 0,
-        }
-    }
-
-    fn set_section(&mut self, i: usize) {
-        self.section = i;
-        let kind = match i {
-            0 => ListKind::Artists,
-            1 => ListKind::Albums,
-            2 => ListKind::Playlists,
-            3 => ListKind::Search,
-            _ => ListKind::Queue,
-        };
-        let view = self.new_view(kind, SECTIONS[i].to_owned());
-        self.stack = vec![view];
-        self.ensure_loaded();
-    }
-
-    fn push(&mut self, kind: ListKind, title: String) {
-        let view = self.new_view(kind, title);
-        self.stack.push(view);
-        self.ensure_loaded();
-    }
-
-    /// requests the next page when the selection nears the end of what is loaded
-    fn ensure_loaded(&mut self) {
-        let api = self.api.clone();
-        let Some(v) = self.view_mut() else { return };
-        if v.loading || v.complete() {
-            return;
-        }
-        let len = v.items.len();
-        if len > 0 && v.selected + PREFETCH_MARGIN < len {
-            return;
-        }
-        let req = ApiRequest::Page {
-            view: v.id,
-            kind: v.kind.clone(),
-            start: len as u32,
-        };
-        if api.try_send(req).is_ok() {
-            v.loading = true;
-        }
-    }
-
-    pub fn on_page(&mut self, view: u64, start: u32, result: Result<PageData, String>) {
-        let Some(v) = self.stack.iter_mut().find(|v| v.id == view) else {
-            return;
-        };
-        v.loading = false;
-        let page = match result {
-            Ok(p) => p,
-            Err(e) => return self.error(e),
-        };
-        if start as usize != v.items.len() {
-            return;
-        }
-        match (&mut v.items, page) {
-            (Items::Artists(dst), PageData::Artists(p)) => {
-                v.total = Some(p.total);
-                dst.extend(p.items);
-            }
-            (Items::Albums(dst), PageData::Albums(p)) => {
-                v.total = Some(p.total);
-                dst.extend(p.items);
-            }
-            (Items::Tracks(dst), PageData::Tracks(p)) => {
-                v.total = Some(p.total);
-                dst.extend(p.items);
-            }
-            (Items::Playlists(dst), PageData::Playlists(p)) => {
-                v.total = Some(p.total);
-                dst.extend(p.items);
-            }
-            _ => return,
-        }
-        // an empty page means the server's totalSize overstated the list
-        if v.items.len() == start as usize {
-            v.total = Some(start);
-        }
-        self.ensure_loaded();
     }
 
     pub fn get_supported_actions(&self) -> Vec<Action> {
@@ -369,7 +136,7 @@ impl AppState {
             (Some(Modal::Help), _) => &[HELP_KEYS],
             (None, Screen::Player) => &[MAXIMIZED_PLAYER_KEYS, GLOBAL_PLAYER_KEYS],
             (None, Screen::Browse(Focus::Sidebar)) => &[NAV_KEYS, GLOBAL_PLAYER_KEYS],
-            (None, Screen::Browse(Focus::List)) => match self.view().map(|v| &v.kind) {
+            (None, Screen::Browse(Focus::List)) => match self.browser.view().map(|v| &v.kind) {
                 Some(ListKind::Queue) => &[QUEUE_KEYS, NAV_KEYS, GLOBAL_PLAYER_KEYS],
                 Some(_) => &[LIST_KEYS, NAV_KEYS, GLOBAL_PLAYER_KEYS],
                 None => &[],
@@ -382,13 +149,13 @@ impl AppState {
         if !self.get_supported_actions().contains(&action) {
             return;
         }
-        // for now any key the help modal accepts closes it
+        // every key the help modal accepts closes it
         if self.modal == Some(Modal::Help) {
             self.modal = None;
             return;
         }
 
-        let half = (self.list_height / 2).max(1) as isize;
+        let half = (self.browser.list_height / 2).max(1) as isize;
         match action {
             Action::Down => self.move_by(1),
             Action::Up => self.move_by(-1),
@@ -407,25 +174,35 @@ impl AppState {
                 }
             }
             Action::Jump(i) => {
-                self.set_section(i);
+                self.browser.set_section(i);
                 self.screen = Screen::Browse(Focus::List);
             }
-            Action::PlayPause => self.toggle_pause(),
-            Action::Next => self.skip(),
-            Action::Previous => self.previous(),
-            Action::SeekForward => self.seek_by(true),
-            Action::SeekBack => self.seek_by(false),
-            Action::VolumeUp => self.change_volume(true),
-            Action::VolumeDown => self.change_volume(false),
-            Action::Shuffle => self.toggle_shuffle(),
-            Action::Repeat => self.cycle_repeat(),
+            Action::PlayPause => self.playback.toggle_pause(),
+            Action::Next => self.playback.skip(),
+            Action::Previous => self.playback.previous(),
+            Action::SeekForward => self.playback.seek_by(true),
+            Action::SeekBack => self.playback.seek_by(false),
+            Action::VolumeUp => self.playback.change_volume(true),
+            Action::VolumeDown => self.playback.change_volume(false),
+            Action::Shuffle => self.playback.toggle_shuffle(),
+            Action::Repeat => self.playback.cycle_repeat(),
             Action::Append => self.add_selected(AddMode::Append),
             Action::PlayNext => self.add_selected(AddMode::Next),
-            Action::Remove => self.queue_edit(|s, i| s.remove_at(i)),
-            Action::MoveDown => self.queue_edit(|s, i| s.move_at(i, true)),
-            Action::MoveUp => self.queue_edit(|s, i| s.move_at(i, false)),
-            Action::Clear => self.queue_edit(|s, _| s.clear_queue()),
-            Action::Search => self.open_search(),
+            Action::Remove => self.queue_edit(|p, i| {
+                p.remove_at(i);
+                i
+            }),
+            Action::MoveDown => self.queue_edit(|p, i| p.move_at(i, true)),
+            Action::MoveUp => self.queue_edit(|p, i| p.move_at(i, false)),
+            Action::Clear => self.queue_edit(|p, _| {
+                p.clear_queue();
+                0
+            }),
+            Action::Search => {
+                self.browser.show_search();
+                self.screen = Screen::Browse(Focus::List);
+                self.modal = Some(Modal::Search(String::new()));
+            }
             Action::Help => self.modal = Some(Modal::Help),
             Action::DebugLine => self.debug_line = !self.debug_line,
             Action::Quit => self.request_quit(),
@@ -443,23 +220,10 @@ impl AppState {
 
     fn move_by(&mut self, delta: isize) {
         match self.screen {
-            Screen::Browse(Focus::Sidebar) => {
-                let i = self
-                    .section
-                    .saturating_add_signed(delta)
-                    .min(SECTIONS.len() - 1);
-                if i != self.section {
-                    self.set_section(i);
-                }
-            }
+            Screen::Browse(Focus::Sidebar) => self.browser.move_section(delta),
             Screen::Browse(Focus::List) => {
-                let last = self.list_len().saturating_sub(1);
-                let Some(v) = self.view_mut() else { return };
-                v.selected = v.selected.saturating_add_signed(delta).min(last);
-                if let Items::Search(items) = &v.items {
-                    v.selected = skip_headers(items, v.selected, delta >= 0);
-                }
-                self.ensure_loaded();
+                let len = self.list_len();
+                self.browser.move_selection(delta, len);
             }
             Screen::Player => {}
         }
@@ -470,10 +234,10 @@ impl AppState {
             self.screen = Screen::Browse(Focus::List);
             return;
         }
-        let Some(v) = self.view() else { return };
+        let Some(v) = self.browser.view() else { return };
         let i = v.selected;
         if matches!(v.kind, ListKind::Queue) {
-            return self.play_index(i);
+            return self.playback.play_index(i);
         }
         let child = match &v.items {
             Items::Artists(a) => a.get(i).map(|a| {
@@ -505,29 +269,25 @@ impl AppState {
                     ListKind::AlbumTracks(a.rating_key.clone()),
                     format!("{} — {}", a.title, a.parent_title),
                 )),
-                Some(SearchItem::Track(t)) => return self.play_from_album(t.clone()),
+                Some(SearchItem::Track(t)) => return self.playback.play_from_album(t.clone()),
                 _ => None,
             },
-            Items::Tracks(t) if i < t.len() => {
-                let tracks = t.clone();
-                self.queue.replace(tracks, i);
-                return self.play_index(self.queue.current.unwrap_or(0));
-            }
+            Items::Tracks(t) if i < t.len() => return self.playback.play_tracks(t.clone(), i),
             Items::Tracks(_) => None,
         };
         if let Some((kind, title)) = child {
-            self.push(kind, title);
+            self.browser.push(kind, title);
         }
     }
 
     /// `a` / `n`: queues the selected track directly, or fetches every track of an album, artist or playlist
     fn add_selected(&mut self, mode: AddMode) {
-        let Some(v) = self.view() else { return };
+        let Some(v) = self.browser.view() else { return };
         let i = v.selected;
         let source = match &v.items {
             _ if matches!(v.kind, ListKind::Queue) => return,
             Items::Tracks(t) => match t.get(i) {
-                Some(t) => return self.add_tracks(mode, vec![t.clone()]),
+                Some(t) => return self.playback.add_tracks(mode, vec![t.clone()]),
                 None => return,
             },
             Items::Albums(a) => a.get(i).map(|a| TrackSource::Album(a.rating_key.clone())),
@@ -536,100 +296,46 @@ impl AppState {
                 .get(i)
                 .map(|p| TrackSource::Playlist(p.rating_key.clone())),
             Items::Search(items) => match items.get(i) {
-                Some(SearchItem::Track(t)) => return self.add_tracks(mode, vec![t.clone()]),
+                Some(SearchItem::Track(t)) => {
+                    return self.playback.add_tracks(mode, vec![t.clone()]);
+                }
                 Some(SearchItem::Album(a)) => Some(TrackSource::Album(a.rating_key.clone())),
                 Some(SearchItem::Artist(a)) => Some(TrackSource::Artist(a.rating_key.clone())),
                 _ => None,
             },
         };
-        if let Some(source) = source
-            && self
-                .api
-                .try_send(ApiRequest::Tracks { source, mode })
-                .is_err()
-        {
-            self.error("busy, try again".into());
+        if let Some(source) = source {
+            self.playback.add_source(source, mode);
         }
     }
 
-    /// Enter on a search result track: queue its whole album and start at the track
-    fn play_from_album(&mut self, track: Track) {
-        let start = track.rating_key.clone();
-        if track.parent_rating_key.is_empty() {
-            return self.add_tracks(AddMode::PlayFrom(start), vec![track]);
-        }
-        let req = ApiRequest::Tracks {
-            source: TrackSource::Album(track.parent_rating_key),
-            mode: AddMode::PlayFrom(start),
+    /// applies `f` to the selected queue entry; `f` returns the index to select afterwards
+    fn queue_edit(&mut self, f: impl FnOnce(&mut Playback, usize) -> usize) {
+        let Some(v) = self.browser.view_mut() else {
+            return;
         };
-        if self.api.try_send(req).is_err() {
-            self.error("busy, try again".into());
-        }
-    }
-
-    pub fn add_tracks(&mut self, mode: AddMode, tracks: Vec<Track>) {
-        let n = tracks.len();
-        match mode {
-            AddMode::Append => self.queue.append(tracks),
-            AddMode::Next => self.queue.play_next(tracks),
-            AddMode::PlayFromStart => {
-                self.queue.replace(tracks, 0);
-                return self.play_index(0);
-            }
-            AddMode::PlayFrom(rk) => {
-                let start = tracks.iter().position(|t| t.rating_key == rk).unwrap_or(0);
-                self.queue.replace(tracks, start);
-                return self.play_index(self.queue.current.unwrap_or(0));
-            }
-        }
-        let what = if n == 1 {
-            "track".to_owned()
-        } else {
-            format!("{n} tracks")
-        };
-        let verb = if matches!(mode, AddMode::Next) {
-            "playing next:"
-        } else {
-            "added"
-        };
-        self.info(format!("{verb} {what}"));
-        self.sync_next();
+        let i = f(&mut self.playback, v.selected);
+        v.selected = i.min(self.playback.queue.len().saturating_sub(1));
     }
 
     fn back(&mut self) {
-        if self.screen == Screen::Browse(Focus::List) && self.stack.len() > 1 {
-            self.stack.pop();
+        if self.screen == Screen::Browse(Focus::List) && self.browser.stack.len() > 1 {
+            self.browser.stack.pop();
         } else {
             self.screen = Screen::Browse(Focus::Sidebar);
         }
     }
-}
 
-/// moves `i` off a group header, preferring the direction of travel
-fn skip_headers(items: &[SearchItem], i: usize, forward: bool) -> usize {
-    let is_item =
-        |j: &usize| matches!(items.get(*j), Some(it) if !matches!(it, SearchItem::Header(_)));
-    let ahead = (i..items.len()).find(is_item);
-    let behind = (0..=i.min(items.len().saturating_sub(1)))
-        .rev()
-        .find(is_item);
-    let pick = if forward {
-        ahead.or(behind)
-    } else {
-        behind.or(ahead)
-    };
-    pick.unwrap_or(i)
-}
-
-impl AppState {
-    fn open_search(&mut self) {
-        if !matches!(self.stack.first().map(|v| &v.kind), Some(ListKind::Search)) {
-            self.set_section(3);
+    /// quits right away unless something is playing, then asks for a second `q`
+    fn request_quit(&mut self) {
+        let now = &self.playback.now;
+        let playing = now.track.is_some() && !now.paused;
+        if !playing || self.quit_armed.is_some_and(|t| t.elapsed() < QUIT_CONFIRM) {
+            self.quit = true;
+        } else {
+            self.quit_armed = Some(Instant::now());
+            self.info("press q again to quit".into());
         }
-        self.stack.truncate(1);
-        self.section = 3;
-        self.screen = Screen::Browse(Focus::List);
-        self.modal = Some(Modal::Search(String::new()));
     }
 
     /// keys typed while the search modal is open
@@ -642,15 +348,10 @@ impl AppState {
             KeyCode::Enter => {
                 let query = input.trim().to_owned();
                 self.modal = None;
-                if query.is_empty() {
-                    return;
-                }
-                if let Some(v) = self.stack.first_mut() {
-                    v.title = format!("Search: {query}");
-                    v.loading = true;
-                }
-                if self.api.try_send(ApiRequest::Search { query }).is_err() {
-                    self.error("busy, try again".into());
+                if !query.is_empty()
+                    && let Err(e) = self.browser.search(query)
+                {
+                    self.error(e);
                 }
             }
             KeyCode::Backspace => {
@@ -660,49 +361,5 @@ impl AppState {
             KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) => input.push(c),
             _ => {}
         }
-    }
-
-    pub fn on_search(&mut self, query: String, result: Result<SearchResults, String>) {
-        let Some(v) = self
-            .stack
-            .iter_mut()
-            .find(|v| matches!(v.kind, ListKind::Search))
-        else {
-            return;
-        };
-        // a newer search was submitted while this one was in flight
-        if v.title != format!("Search: {query}") {
-            return;
-        }
-        v.loading = false;
-        let r = match result {
-            Ok(r) => r,
-            Err(e) => return self.error(e),
-        };
-        let groups: [(&str, Vec<SearchItem>); 3] = [
-            (
-                "Artists",
-                r.artists.into_iter().map(SearchItem::Artist).collect(),
-            ),
-            (
-                "Albums",
-                r.albums.into_iter().map(SearchItem::Album).collect(),
-            ),
-            (
-                "Tracks",
-                r.tracks.into_iter().map(SearchItem::Track).collect(),
-            ),
-        ];
-        let mut items = Vec::new();
-        for (name, group) in groups {
-            if !group.is_empty() {
-                items.push(SearchItem::Header(format!("{name} ({})", group.len())));
-                items.extend(group);
-            }
-        }
-        v.total = Some(items.len() as u32);
-        v.selected = skip_headers(&items, 0, true);
-        v.offset = 0;
-        v.items = Items::Search(items);
     }
 }

@@ -1,3 +1,4 @@
+pub mod browser;
 pub mod keys;
 pub mod now_playing;
 mod playback;
@@ -17,13 +18,14 @@ use tracing::warn;
 
 use crate::audio::player::{self, PlayerCmd, PlayerEvent};
 use crate::config::{self, Config};
-use crate::media_integration::{MediaIntegration, run_main_loop};
+use crate::media_controls::{MediaControls, run_main_loop};
 use crate::plex::api::SearchResults;
 use crate::plex::models::{Album, Artist, Page, Playlist, Track};
 use crate::plex::{PlexClient, auth};
+use browser::ListKind;
 use reporting::Report;
 use souvlaki::MediaControlEvent;
-use state::{AppState, ListKind, Modal};
+use state::{AppState, Modal};
 
 const API_WORKERS: usize = 2;
 const REPORT_TIMEOUT: Duration = Duration::from_secs(3);
@@ -90,7 +92,7 @@ pub enum AppEvent {
         result: Result<RgbImage, String>,
     },
     Player(PlayerEvent),
-    MediaIntegration(MediaControlEvent),
+    MediaControl(MediaControlEvent),
     /// SIGTERM, SIGINT or SIGHUP
     Signal,
     /// the server answered again at this address after rediscovery
@@ -115,10 +117,10 @@ pub fn run(client: Arc<PlexClient>, cfg: &mut Config) -> Result<()> {
     #[cfg(unix)]
     spawn_signals(tx.clone())?;
 
-    let media_integration = MediaIntegration::start(tx.clone());
+    let media_controls = MediaControls::start(tx.clone());
     spawn_input(tx)?;
 
-    spawn_tui(rx, api_tx, player_tx, media_integration, &client, cfg)
+    spawn_tui(rx, api_tx, player_tx, media_controls, &client, cfg)
 }
 
 /// runs the ui on a scoped thread while the main thread runs the platform run loop
@@ -126,7 +128,7 @@ fn spawn_tui(
     rx: Receiver<AppEvent>,
     api_tx: SyncSender<ApiRequest>,
     player_tx: SyncSender<PlayerCmd>,
-    mut media_integration: Option<MediaIntegration>,
+    mut media_controls: Option<MediaControls>,
     client: &PlexClient,
     cfg: &mut Config,
 ) -> Result<()> {
@@ -143,7 +145,7 @@ fn spawn_tui(
                     &mut terminal,
                     &mut state,
                     &rx,
-                    media_integration.as_mut(),
+                    media_controls.as_mut(),
                     client,
                 );
                 ratatui::restore();
@@ -164,10 +166,10 @@ fn shutdown(
     cfg: &mut Config,
 ) -> Result<()> {
     let _ = player.send(PlayerCmd::Stop);
-    for r in state.reporter.stopped() {
+    for r in state.playback.reporter.stopped() {
         send_report(client, &r);
     }
-    cfg.volume = state.now.volume;
+    cfg.volume = state.playback.now.volume;
     if let Some(url) = state.server_url.take() {
         cfg.server_url = Some(url);
     }
@@ -178,7 +180,7 @@ fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     state: &mut AppState,
     rx: &Receiver<AppEvent>,
-    mut media_integration: Option<&mut MediaIntegration>,
+    mut media_controls: Option<&mut MediaControls>,
     client: &PlexClient,
 ) -> Result<()> {
     loop {
@@ -195,11 +197,12 @@ fn event_loop(
             handle(state, ev);
         }
         state.expire_message();
-        state.sync_cover();
-        if state.media_integration_dirty {
-            state.media_integration_dirty = false;
-            if let Some(m) = media_integration.as_deref_mut() {
-                m.update(&state.now, client);
+        let playback = &mut state.playback;
+        playback.sync_cover();
+        if playback.media_controls_dirty {
+            playback.media_controls_dirty = false;
+            if let Some(m) = media_controls.as_deref_mut() {
+                m.update(&playback.now, client);
             }
         }
         if state.quit {
@@ -222,21 +225,32 @@ fn handle(state: &mut AppState, ev: AppEvent) {
             view,
             start,
             result,
-        } => state.on_page(view, start, result),
+        } => {
+            if let Err(e) = state.browser.on_page(view, start, result) {
+                state.error(e);
+            }
+        }
         AppEvent::Tracks { mode, result } => match result {
             Ok(tracks) if tracks.is_empty() => state.info("nothing to add".into()),
-            Ok(tracks) => state.add_tracks(mode, tracks),
+            Ok(tracks) => state.playback.add_tracks(mode, tracks),
             Err(e) => state.error(e),
         },
-        AppEvent::Search { query, result } => state.on_search(query, result),
-        AppEvent::Cover { thumb, result } => state.on_cover(thumb, result),
-        AppEvent::Player(ev) => state.on_player(ev),
-        AppEvent::MediaIntegration(ev) => state.on_media_integration(ev),
-        AppEvent::Signal => state.quit = true,
+        AppEvent::Search { query, result } => {
+            if let Err(e) = state.browser.on_search(query, result) {
+                state.error(e);
+            }
+        }
+        AppEvent::Cover { thumb, result } => state.playback.on_cover(thumb, result),
+        AppEvent::Player(ev) => state.playback.on_player(ev),
+        AppEvent::MediaControl(MediaControlEvent::Quit) | AppEvent::Signal => state.quit = true,
+        AppEvent::MediaControl(ev) => state.playback.on_media_control(ev),
         AppEvent::Reconnected(url) => {
             state.info(format!("reconnected to the server at {url}"));
             state.server_url = Some(url);
         }
+    }
+    if let Some(m) = state.playback.notice.take() {
+        state.message = Some(m);
     }
 }
 

@@ -5,17 +5,15 @@ use std::time::Duration;
 use anyhow::Result;
 #[cfg(target_os = "macos")]
 use core_foundation::runloop::{CFRunLoop, kCFRunLoopDefaultMode};
-use souvlaki::{
-    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig,
-};
+use souvlaki::{MediaControlEvent, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig};
 use tracing::warn;
 
 use crate::app::AppEvent;
 use crate::app::now_playing::NowPlaying;
 use crate::plex::PlexClient;
 
-pub struct MediaIntegration {
-    controls: MediaControls,
+pub struct MediaControls {
+    controls: souvlaki::MediaControls,
 }
 
 /// blocks the main thread on the run loop macOS uses for media key and Control Center commands
@@ -33,7 +31,7 @@ pub fn run_main_loop(tui: &ScopedJoinHandle<'_, Result<()>>) {
 #[cfg(not(target_os = "macos"))]
 pub fn run_main_loop(_tui: &ScopedJoinHandle<'_, Result<()>>) {}
 
-impl MediaIntegration {
+impl MediaControls {
     /// registers on the session bus; returns `None` (after logging once) when D-Bus isn't usable
     pub fn start(tx: SyncSender<AppEvent>) -> Option<Self> {
         let config = PlatformConfig {
@@ -41,18 +39,18 @@ impl MediaIntegration {
             display_name: "rex",
             hwnd: None,
         };
-        let mut controls = match MediaControls::new(config) {
+        let mut controls = match souvlaki::MediaControls::new(config) {
             Ok(c) => c,
             Err(e) => {
-                warn!("Media Integration unavailable: {e:?}");
+                warn!("media controls unavailable: {e:?}");
                 return None;
             }
         };
         let attached = controls.attach(move |ev: MediaControlEvent| {
-            let _ = tx.send(AppEvent::MediaIntegration(ev));
+            let _ = tx.send(AppEvent::MediaControl(ev));
         });
         if let Err(e) = attached {
-            warn!("Media Integration unavailable: {e:?}");
+            warn!("media controls unavailable: {e:?}");
             return None;
         }
         Some(Self { controls })
@@ -81,10 +79,10 @@ impl MediaIntegration {
 
     fn apply(&mut self, metadata: MediaMetadata, playback: MediaPlayback) {
         if let Err(e) = self.controls.set_metadata(metadata) {
-            warn!("Media Integration metadata: {e:?}");
+            warn!("media controls metadata: {e:?}");
         }
         if let Err(e) = self.controls.set_playback(playback) {
-            warn!("Media Integration playback: {e:?}");
+            warn!("media controls playback: {e:?}");
         }
     }
 }

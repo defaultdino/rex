@@ -5,12 +5,11 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, Clear, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
+use crate::app::browser::{Items, ListKind, SECTIONS, SearchItem, View};
 use crate::app::keys::{BINDINGS, key_name};
 use crate::app::now_playing::NowPlaying;
 use crate::app::queue::Queue;
-use crate::app::state::{
-    AppState, Focus, Items, ListKind, Modal, SECTIONS, Screen, SearchItem, View,
-};
+use crate::app::state::{AppState, Focus, Modal, Screen};
 use crate::plex::models::{Album, Artist, Track};
 use crate::ui::help_bar::draw_help_bar;
 use crate::ui::player::{draw_maximized_player, draw_minimized_player};
@@ -76,10 +75,10 @@ fn draw_sidebar(f: &mut Frame, s: &AppState, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, name)| {
-            let selected = i == s.section;
+            let selected = i == s.browser.section;
             let marker = if selected { "> " } else { "  " };
             let text = match i {
-                4 => format!("{marker}{name} ({})", s.queue.len()),
+                4 => format!("{marker}{name} ({})", s.playback.queue.len()),
                 _ => format!("{marker}{name}"),
             };
             let line = Line::raw(fit(&text, "", width));
@@ -108,13 +107,18 @@ fn draw_list(f: &mut Frame, s: &mut AppState, area: Rect) {
         _ => None,
     };
     let searching = search.is_some();
-    let crumb = truncate_left(&search.unwrap_or_else(|| breadcrumb(&s.stack)), title_width);
+    let crumb = truncate_left(
+        &search.unwrap_or_else(|| breadcrumb(&s.browser.stack)),
+        title_width,
+    );
     let focused = s.screen == Screen::Browse(Focus::List);
-    let Some(v) = s.stack.last_mut() else { return };
+    let Some(v) = s.browser.stack.last_mut() else {
+        return;
+    };
     let is_queue = matches!(v.kind, ListKind::Queue);
 
     let count = match (v.total, v.loading) {
-        _ if is_queue => format!(" {} ", s.queue.len()),
+        _ if is_queue => format!(" {} ", s.playback.queue.len()),
         (Some(t), _) if v.items.len() < t as usize => format!(" {}/{t} ", v.items.len()),
         (Some(t), _) => format!(" {t} "),
         (None, true) => " … ".to_owned(),
@@ -129,9 +133,9 @@ fn draw_list(f: &mut Frame, s: &mut AppState, area: Rect) {
 
     let height = inner.height as usize;
     let width = inner.width as usize;
-    s.list_height = height;
+    s.browser.list_height = height;
     let len = if is_queue {
-        s.queue.len()
+        s.playback.queue.len()
     } else {
         v.items.len()
     };
@@ -158,8 +162,8 @@ fn draw_list(f: &mut Frame, s: &mut AppState, area: Rect) {
     let end = (v.offset + height).min(len);
     let lines: Vec<Line> = (v.offset..end)
         .map(|i| {
-            let is_playing = item_is_playing(v, i, &s.now, &s.queue);
-            let (left, right) = row(v, i, &s.queue);
+            let is_playing = item_is_playing(v, i, &s.playback.now, &s.playback.queue);
+            let (left, right) = row(v, i, &s.playback.queue);
             if let Items::Search(items) = &v.items
                 && let SearchItem::Header(h) = &items[i]
             {
