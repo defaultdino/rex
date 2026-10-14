@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 use crate::audio::player::{self, PlayerCmd, PlayerEvent};
-use crate::config::{self, Config};
+use crate::config::{self, SavedState};
 use crate::plex::auth;
 use crate::plex::models::Page;
 
@@ -61,10 +61,10 @@ enum Subcommand {
 }
 
 impl Options {
-    pub fn run(self, cfg: &mut Config) -> Result<ExitCode> {
+    pub fn run(self, saved: &mut SavedState) -> Result<ExitCode> {
         use Subcommand as SC;
-        let client = auth::connect(cfg)?;
-        let section = cfg
+        let client = auth::connect(saved)?;
+        let section = saved
             .music_section
             .clone()
             .context("no music section selected")?;
@@ -81,7 +81,7 @@ impl Options {
                 print_all(|start| client.playlist_tracks(&rk, start))?
             }
             SC::Search { query } => println!("{:#?}", client.search(&section, &query.join(" "))?),
-            SC::Play { tracks } => play(client, cfg.volume, &tracks)?,
+            SC::Play { tracks } => play(client, saved.volume, &tracks)?,
         }
         Ok(ExitCode::SUCCESS)
     }

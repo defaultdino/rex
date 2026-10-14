@@ -8,7 +8,7 @@ use tracing::{info, warn};
 
 use super::PlexClient;
 use super::models::Container;
-use crate::config::Config;
+use crate::config::SavedState;
 
 const PLEX_TV: &str = "https://plex.tv";
 const API_TIMEOUT: Duration = Duration::from_secs(15);
@@ -65,12 +65,12 @@ struct Identity {
 }
 
 // Returns the plex account token
-pub fn login(cfg: &Config) -> Result<String> {
-    let tv = PlexClient::new(PLEX_TV, "", &cfg.client_identifier, API_TIMEOUT);
+pub fn login(saved: &SavedState) -> Result<String> {
+    let tv = PlexClient::new(PLEX_TV, "", &saved.client_identifier, API_TIMEOUT);
     let pin: Pin = tv.post("/api/v2/pins", &[("strong", "true")])?;
     println!(
         "Open this URL in a browser to sign in:\n\n  https://app.plex.tv/auth#?clientID={}&code={}&context%5Bdevice%5D%5Bproduct%5D=rex\n\nWaiting…",
-        cfg.client_identifier, pin.code
+        saved.client_identifier, pin.code
     );
     let deadline = Instant::now() + Duration::from_secs(300);
     let path = format!("/api/v2/pins/{}", pin.id);
@@ -88,35 +88,35 @@ pub fn login(cfg: &Config) -> Result<String> {
     bail!("timed out waiting for sign-in")
 }
 
-pub fn connect(cfg: &mut Config) -> Result<PlexClient> {
-    let client = connect_server(cfg)?;
-    if cfg.music_section.is_none() {
-        pick_section(&client, cfg, None)?;
+pub fn connect(saved: &mut SavedState) -> Result<PlexClient> {
+    let client = connect_server(saved)?;
+    if saved.music_section.is_none() {
+        pick_section(&client, saved, None)?;
     }
     Ok(client)
 }
 
-pub fn switch_section(cfg: &mut Config, pick: Option<usize>) -> Result<String> {
-    let account = cfg
+pub fn switch_section(saved: &mut SavedState, pick: Option<usize>) -> Result<String> {
+    let account = saved
         .token
         .clone()
         .context("not logged in; run `rex login`")?;
-    discover(cfg, &account, None, pick).map(|(_, title)| title)
+    discover(saved, &account, None, pick).map(|(_, title)| title)
 }
 
-fn connect_server(cfg: &mut Config) -> Result<PlexClient> {
-    if let Some(url) = cfg.server_url.clone() {
-        let token = cfg
+fn connect_server(saved: &mut SavedState) -> Result<PlexClient> {
+    if let Some(url) = saved.server_url.clone() {
+        let token = saved
             .server_token
             .clone()
-            .or_else(|| cfg.token.clone())
+            .or_else(|| saved.token.clone())
             .context("server_url is set but no token; run `rex login`")?;
 
-        if probe(&url, cfg.server_id.as_deref()) {
+        if probe(&url, saved.server_id.as_deref()) {
             return Ok(PlexClient::new(
                 &url,
                 &token,
-                &cfg.client_identifier,
+                &saved.client_identifier,
                 API_TIMEOUT,
             ));
         }
@@ -124,13 +124,13 @@ fn connect_server(cfg: &mut Config) -> Result<PlexClient> {
         warn!("the saved server {url} is unreachable, rediscovering");
     }
 
-    let account = cfg
+    let account = saved
         .token
         .clone()
         .context("not logged in; run `rex login`")?;
 
-    let only = cfg.server_id.clone();
-    discover(cfg, &account, only.as_deref(), None).map(|(client, _)| client)
+    let only = saved.server_id.clone();
+    discover(saved, &account, only.as_deref(), None).map(|(client, _)| client)
 }
 
 fn probe(uri: &str, expected_id: Option<&str>) -> bool {
@@ -192,13 +192,15 @@ fn reachable(servers: &[Resource]) -> Vec<Option<&Connection>> {
 }
 
 /// finds a working address for the saved server after it stopped answering, and switches `client` to it
-pub fn reconnect(client: &PlexClient, cfg: &Config) -> Result<String> {
-    let account = cfg.token.as_deref().context("not logged in")?;
-    let id = cfg
-        .server_id
-        .as_deref()
-        .context("no saved server to look up")?;
-    let servers = servers(account, &cfg.client_identifier, Some(id))?;
+pub fn reconnect(
+    client: &PlexClient,
+    account: Option<&str>,
+    server_id: Option<&str>,
+    client_id: &str,
+) -> Result<String> {
+    let account = account.context("not logged in")?;
+    let id = server_id.context("no saved server to look up")?;
+    let servers = servers(account, client_id, Some(id))?;
     let uri = reachable(&servers)
         .into_iter()
         .flatten()
@@ -210,14 +212,14 @@ pub fn reconnect(client: &PlexClient, cfg: &Config) -> Result<String> {
 }
 
 fn discover(
-    cfg: &mut Config,
+    saved: &mut SavedState,
     account: &str,
     only: Option<&str>,
     pick: Option<usize>,
 ) -> Result<(PlexClient, String)> {
     println!("Loading servers...");
 
-    let servers = servers(account, &cfg.client_identifier, only)?;
+    let servers = servers(account, &saved.client_identifier, only)?;
     let reachable = reachable(&servers);
 
     let mut choices = Vec::new();
@@ -227,7 +229,7 @@ fn discover(
             continue;
         };
         let token = srv.access_token.as_deref().unwrap_or(account);
-        let client = PlexClient::new(&conn.uri, token, &cfg.client_identifier, API_TIMEOUT);
+        let client = PlexClient::new(&conn.uri, token, &saved.client_identifier, API_TIMEOUT);
         let sections = match client.music_sections() {
             Ok(s) => s,
             Err(e) => {
@@ -254,17 +256,28 @@ fn discover(
     let (srv, url, token, sec) = choices.swap_remove(i);
 
     info!("using server {} at {url}", srv.name);
-    cfg.server_id = Some(srv.client_identifier.clone());
-    cfg.server_url = Some(url.clone());
-    cfg.server_token = Some(token.clone());
-    cfg.music_section = Some(sec.key);
-    cfg.save()?;
-    let client = PlexClient::new(&url, &token, &cfg.client_identifier, API_TIMEOUT);
+    // since a saved queues tracks only exist on 
+    // the library they came from we need to reset the queue
+    if saved.server_id.as_ref() != Some(&srv.client_identifier)
+        || saved.music_section.as_ref() != Some(&sec.key)
+    {
+        saved.queue = None;
+    }
+    saved.server_id = Some(srv.client_identifier.clone());
+    saved.server_url = Some(url.clone());
+    saved.server_token = Some(token.clone());
+    saved.music_section = Some(sec.key);
+    saved.save()?;
+    let client = PlexClient::new(&url, &token, &saved.client_identifier, API_TIMEOUT);
     Ok((client, format!("{} — {}", srv.name, sec.title)))
 }
 
 /// saves the chosen music library and returns its title
-fn pick_section(client: &PlexClient, cfg: &mut Config, pick: Option<usize>) -> Result<String> {
+fn pick_section(
+    client: &PlexClient,
+    saved: &mut SavedState,
+    pick: Option<usize>,
+) -> Result<String> {
     let mut sections = client.music_sections()?;
     if sections.is_empty() {
         bail!("server has no music library");
@@ -278,8 +291,11 @@ fn pick_section(client: &PlexClient, cfg: &mut Config, pick: Option<usize>) -> R
         }
     };
     let sec = sections.swap_remove(i);
-    cfg.music_section = Some(sec.key);
-    cfg.save()?;
+    if saved.music_section.as_ref() != Some(&sec.key) {
+        saved.queue = None;
+    }
+    saved.music_section = Some(sec.key);
+    saved.save()?;
     Ok(sec.title)
 }
 

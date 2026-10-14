@@ -7,7 +7,7 @@ use souvlaki::{MediaControlEvent, SeekDirection};
 use tracing::warn;
 
 use super::now_playing::NowPlaying;
-use super::queue::Queue;
+use super::queue::{Queue, SavedQueue};
 use super::reporting::{Report, Reporter};
 use super::state::Message;
 use super::{AddMode, ApiRequest, TrackSource};
@@ -35,6 +35,10 @@ pub struct Playback {
     loading: Option<(u64, String)>,
     enqueued: Option<(u64, String)>,
     failures: usize,
+    /// the restored track is shown paused at this position but not loaded in the player yet
+    resume_ms: Option<u64>,
+    /// seek here once the track being loaded starts
+    seek_on_start: Option<u64>,
     pub(super) reporter: Reporter,
     /// now-playing changed in a way media widgets should hear about
     pub media_controls_dirty: bool,
@@ -43,8 +47,13 @@ pub struct Playback {
 }
 
 impl Playback {
-    pub fn new(api: SyncSender<ApiRequest>, player: SyncSender<PlayerCmd>, volume: f32) -> Self {
-        Self {
+    pub fn new(
+        api: SyncSender<ApiRequest>,
+        player: SyncSender<PlayerCmd>,
+        volume: f32,
+        saved: Option<SavedQueue>,
+    ) -> Self {
+        let mut playback = Self {
             api,
             player,
             queue: Queue::default(),
@@ -56,10 +65,26 @@ impl Playback {
             loading: None,
             enqueued: None,
             failures: 0,
+            resume_ms: None,
+            seek_on_start: None,
             reporter: Reporter::default(),
             media_controls_dirty: false,
             notice: None,
+        };
+
+        if let Some(saved) = saved {
+            let position_ms = saved.position_ms;
+            playback.queue = Queue::restore(saved);
+            if let Some(e) = playback.queue.current() {
+                playback.now.track = Some(e.track.clone());
+                playback.now.position_ms = position_ms;
+                playback.now.paused = true;
+                playback.resume_ms = Some(position_ms);
+                playback.media_controls_dirty = true;
+            }
         }
+        
+        playback
     }
 
     fn error(&mut self, text: String) {
@@ -103,6 +128,8 @@ impl Playback {
         self.loading = Some((e.id, track.rating_key.clone()));
         self.queue.current = Some(i);
         self.enqueued = None;
+        self.resume_ms = None;
+        self.seek_on_start = None;
         self.now.track = Some(track.clone());
         self.now.position_ms = 0;
         self.now.paused = false;
@@ -127,9 +154,19 @@ impl Playback {
         self.now.buffering = false;
         self.loading = None;
         self.enqueued = None;
+        self.resume_ms = None;
+        self.seek_on_start = None;
     }
 
     pub fn toggle_pause(&mut self) {
+        if let Some(ms) = self.resume_ms.take() {
+            if let Some(i) = self.queue.current {
+                self.play_index(i);
+                // after play_index, which clears it
+                self.seek_on_start = Some(ms);
+            }
+            return;
+        }
         if self.now.track.is_none() {
             if let Some(i) = self.queue.current.or_else(|| self.queue.next_index(false)) {
                 self.play_index(i);
@@ -176,6 +213,10 @@ impl Playback {
         };
         self.now.position_ms = target;
         self.media_controls_dirty = true;
+        if let Some(r) = self.resume_ms.as_mut() {
+            *r = target;
+            return;
+        }
         self.send(PlayerCmd::Seek(target));
     }
 
@@ -209,7 +250,7 @@ impl Playback {
             .queue
             .next_index(true)
             .and_then(|i| self.queue.entries.get(i))
-            .filter(|_| self.now.track.is_some());
+            .filter(|_| self.now.track.is_some() && self.resume_ms.is_none());
         match (next, &self.enqueued) {
             (Some(e), Some((id, _))) if e.id == *id => {}
             (Some(e), _) if due => {
@@ -224,7 +265,9 @@ impl Playback {
             _ => {}
         }
     }
-
+    
+    // XXX: this function is getting impossible to maintain,
+    // I would like to iron out this playback stuff eventually
     pub fn on_player(&mut self, ev: PlayerEvent) {
         match ev {
             PlayerEvent::Position(ms) => {
@@ -259,6 +302,9 @@ impl Playback {
                 self.now.position_ms = 0;
                 self.now.buffering = false;
                 self.failures = 0;
+                if let Some(ms) = self.seek_on_start.take() {
+                    self.seek_to(ms);
+                }
                 self.sync_next();
             }
             PlayerEvent::TrackEnded(_) => {

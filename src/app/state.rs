@@ -10,6 +10,7 @@ use super::keys::{
     QUEUE_KEYS, SEARCH_INPUT_KEYS,
 };
 use super::playback::Playback;
+use super::queue::SavedQueue;
 use super::{AddMode, ApiRequest, TrackSource};
 use crate::audio::player::PlayerCmd;
 
@@ -65,7 +66,7 @@ pub struct AppState {
     pub browser: Browser,
     pub playback: Playback,
     quit_armed: Option<Instant>,
-    /// new server address found by rediscovery, saved to the config on exit
+    /// new server address found by rediscovery, saved to the state on exit
     pub server_url: Option<String>,
     pub debug_line: bool,
     /// colour for focus, selection and highlights, from `accent_color` in the config
@@ -75,12 +76,17 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(api: SyncSender<ApiRequest>, player: SyncSender<PlayerCmd>, volume: f32) -> Self {
+    pub fn new(
+        api: SyncSender<ApiRequest>,
+        player: SyncSender<PlayerCmd>,
+        volume: f32,
+        saved: Option<SavedQueue>,
+    ) -> Self {
         Self {
             screen: Screen::Browse(Focus::List),
             modal: None,
             browser: Browser::new(api.clone()),
-            playback: Playback::new(api, player, volume),
+            playback: Playback::new(api, player, volume, saved),
             quit_armed: None,
             server_url: None,
             debug_line: false,

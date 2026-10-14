@@ -12,12 +12,13 @@ mod ui;
 
 fn main() -> anyhow::Result<ExitCode> {
     let options = self::commands::Options::parse();
-
     setup_logging(options.log_level)?;
-    let mut cfg = config::Config::load()?;
+
+    let cfg = config::Config::load()?;
+    let mut saved = config::SavedState::load(&cfg)?;
 
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting");
-    options.run(&mut cfg)
+    options.run(&cfg, &mut saved)
 }
 
 pub fn fmt_ms(ms: u64) -> String {

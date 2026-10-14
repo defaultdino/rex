@@ -17,7 +17,7 @@ use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use tracing::warn;
 
 use crate::audio::player::{self, PlayerCmd, PlayerEvent};
-use crate::config::{self, Config};
+use crate::config::{self, SavedState};
 use crate::media_controls::{MediaControls, run_main_loop};
 use crate::plex::api::SearchResults;
 use crate::plex::models::{Album, Artist, Page, Playlist, Track};
@@ -100,8 +100,8 @@ pub enum AppEvent {
     Reconnected(String),
 }
 
-pub fn run(client: Arc<PlexClient>, cfg: &mut Config) -> Result<()> {
-    let section = cfg
+pub fn run(client: Arc<PlexClient>, saved: &mut SavedState, accent: Option<&str>) -> Result<()> {
+    let section = saved
         .music_section
         .clone()
         .context("no music section selected")?;
@@ -110,9 +110,9 @@ pub fn run(client: Arc<PlexClient>, cfg: &mut Config) -> Result<()> {
     let (api_tx, api_rx) = sync_channel(16);
 
     let cache = config::dirs()?.cache_dir().join("stream");
-    let (player_tx, player_rx) = player::spawn(client.clone(), cache, cfg.volume)?;
+    let (player_tx, player_rx) = player::spawn(client.clone(), cache, saved.volume)?;
 
-    spawn_api_workers(client.clone(), section, cfg.clone(), api_rx, tx.clone())?;
+    spawn_api_workers(client.clone(), section, saved, api_rx, tx.clone())?;
     spawn_forwarder(player_rx, tx.clone())?;
 
     #[cfg(unix)]
@@ -121,25 +121,24 @@ pub fn run(client: Arc<PlexClient>, cfg: &mut Config) -> Result<()> {
     let media_controls = MediaControls::start(tx.clone());
     spawn_input(tx)?;
 
-    spawn_tui(rx, api_tx, player_tx, media_controls, &client, cfg)
+    let mut app = AppState::new(api_tx, player_tx.clone(), saved.volume, saved.queue.take());
+    app.set_accent(accent);
+    spawn_tui(rx, app, player_tx, media_controls, &client, saved)
 }
 
 /// runs the ui on a scoped thread while the main thread runs the platform run loop
 fn spawn_tui(
     rx: Receiver<AppEvent>,
-    api_tx: SyncSender<ApiRequest>,
+    mut state: AppState,
     player_tx: SyncSender<PlayerCmd>,
     mut media_controls: Option<MediaControls>,
     client: &PlexClient,
-    cfg: &mut Config,
+    saved: &mut SavedState,
 ) -> Result<()> {
     thread::scope(|s| {
         let tui = thread::Builder::new()
             .name("tui".into())
             .spawn_scoped(s, move || {
-                let mut state = AppState::new(api_tx, player_tx.clone(), cfg.volume);
-                state.set_accent(cfg.accent_color.as_deref());
-
                 // ratatui::init installs a panic hook that restores the terminal
                 let mut terminal = ratatui::init();
                 let result = event_loop(
@@ -151,7 +150,7 @@ fn spawn_tui(
                 );
                 ratatui::restore();
 
-                shutdown(&mut state, &player_tx, client, cfg)?;
+                shutdown(&mut state, &player_tx, client, saved)?;
                 result
             })?;
         run_main_loop(&tui);
@@ -164,17 +163,29 @@ fn shutdown(
     state: &mut AppState,
     player: &SyncSender<PlayerCmd>,
     client: &PlexClient,
-    cfg: &mut Config,
+    saved: &mut SavedState,
 ) -> Result<()> {
     let _ = player.send(PlayerCmd::Stop);
     for r in state.playback.reporter.stopped() {
         send_report(client, &r);
     }
-    cfg.volume = state.playback.now.volume;
-    if let Some(url) = state.server_url.take() {
-        cfg.server_url = Some(url);
+
+    let disk = SavedState::read()?;
+    let same_library = disk
+        .as_ref()
+        .is_none_or(|d| d.server_id == saved.server_id && d.music_section == saved.music_section);
+    
+    let mut out = disk.unwrap_or_else(|| std::mem::take(saved));
+    let playback = &state.playback;
+    out.volume = playback.now.volume;
+    
+    if same_library {
+        out.queue = playback.queue.save(playback.now.position_ms);
+        if let Some(url) = state.server_url.take() {
+            out.server_url = Some(url);
+        }
     }
-    cfg.save()
+    out.save()
 }
 
 fn event_loop(
@@ -326,7 +337,10 @@ fn spawn_input(tx: SyncSender<AppEvent>) -> Result<()> {
 struct ApiContext {
     client: Arc<PlexClient>,
     section: String,
-    cfg: Config,
+    /// what `auth::reconnect` needs to look the server up on plex.tv
+    token: Option<String>,
+    server_id: Option<String>,
+    client_id: String,
     tx: SyncSender<AppEvent>,
     /// last reconnect attempt and whether it worked, shared so workers don't stampede plex.tv
     last_reconnect: Mutex<Option<(Instant, bool)>>,
@@ -351,7 +365,14 @@ impl ApiContext {
         {
             return ok;
         }
-        let result = auth::reconnect(&self.client, &self.cfg);
+        
+        let result = auth::reconnect(
+            &self.client,
+            self.token.as_deref(),
+            self.server_id.as_deref(),
+            &self.client_id,
+        );
+
         *last = Some((Instant::now(), result.is_ok()));
         match result {
             Ok(url) => {
@@ -400,7 +421,7 @@ impl ApiContext {
 fn spawn_api_workers(
     client: Arc<PlexClient>,
     section: String,
-    cfg: Config,
+    saved: &SavedState,
     rx: Receiver<ApiRequest>,
     tx: SyncSender<AppEvent>,
 ) -> Result<()> {
@@ -408,7 +429,9 @@ fn spawn_api_workers(
     let ctx = Arc::new(ApiContext {
         client,
         section,
-        cfg,
+        token: saved.token.clone(),
+        server_id: saved.server_id.clone(),
+        client_id: saved.client_identifier.clone(),
         tx,
         last_reconnect: Mutex::new(None),
     });

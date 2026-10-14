@@ -2,7 +2,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-use crate::config::Config;
+use crate::config::SavedState;
 use crate::plex::auth;
 
 #[derive(Parser, Debug)]
@@ -11,8 +11,8 @@ pub(super) struct Options {
 }
 
 impl Options {
-    pub fn run(self, cfg: &mut Config) -> anyhow::Result<ExitCode> {
-        let section_name = auth::switch_section(cfg, self.section)?;
+    pub fn run(self, saved: &mut SavedState) -> anyhow::Result<ExitCode> {
+        let section_name = auth::switch_section(saved, self.section)?;
         println!("Using {section_name}");
         Ok(ExitCode::SUCCESS)
     }

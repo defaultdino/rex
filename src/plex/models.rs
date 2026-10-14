@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 pub struct Container<T> {
@@ -45,7 +45,8 @@ pub struct Album {
     pub leaf_count: Option<u32>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Track {
     pub rating_key: String,
     pub title: String,

@@ -1,9 +1,11 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
+
 use crate::plex::models::Track;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Repeat {
     #[default]
     Off,
@@ -24,6 +26,19 @@ impl Repeat {
 pub struct Entry {
     pub id: u64,
     pub track: Arc<Track>,
+}
+
+/// the queue as saved between runs
+#[derive(Serialize, Deserialize)]
+pub struct SavedQueue {
+    /// in play order
+    tracks: Vec<Arc<Track>>,
+    /// indices into `tracks` in insertion order, so shuffle can still be undone
+    unshuffled: Vec<usize>,
+    current: Option<usize>,
+    pub position_ms: u64,
+    shuffle: bool,
+    repeat: Repeat,
 }
 
 /// tracks in play order; `unshuffled` remembers insertion order so shuffle can be undone
@@ -55,6 +70,38 @@ impl Default for Queue {
 }
 
 impl Queue {
+    pub fn save(&self, position_ms: u64) -> Option<SavedQueue> {
+        if self.entries.is_empty() {
+            return None;
+        }
+        Some(SavedQueue {
+            tracks: self.entries.iter().map(|e| e.track.clone()).collect(),
+            unshuffled: self
+                .unshuffled
+                .iter()
+                .filter_map(|&id| self.position(id))
+                .collect(),
+            current: self.current,
+            position_ms,
+            shuffle: self.shuffle,
+            repeat: self.repeat,
+        })
+    }
+
+    pub fn restore(saved: SavedQueue) -> Self {
+        let mut q = Self::default();
+        q.entries = q.make(saved.tracks);
+        q.unshuffled = saved
+            .unshuffled
+            .iter()
+            .filter_map(|&i| q.entries.get(i).map(|e| e.id))
+            .collect();
+        q.current = saved.current.filter(|&c| c < q.entries.len());
+        q.shuffle = saved.shuffle;
+        q.repeat = saved.repeat;
+        q
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }

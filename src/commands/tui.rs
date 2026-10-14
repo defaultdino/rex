@@ -4,21 +4,21 @@ use std::sync::Arc;
 use anyhow::Result;
 use clap::Parser;
 
-use crate::config::Config;
+use crate::config::SavedState;
 use crate::plex::auth;
 
 #[derive(Parser, Debug, Default)]
 pub(super) struct Options {}
 
 impl Options {
-    pub fn run(self, cfg: &mut Config) -> Result<ExitCode> {
-        if cfg.token.is_none() && cfg.server_url.is_none() {
-            cfg.token = Some(auth::login(cfg)?);
-            cfg.save()?;
+    pub fn run(self, saved: &mut SavedState, accent: Option<&str>) -> Result<ExitCode> {
+        if saved.token.is_none() && saved.server_url.is_none() {
+            saved.token = Some(auth::login(saved)?);
+            saved.save()?;
         }
         println!("Connecting…");
-        let client = auth::connect(cfg)?;
-        crate::app::run(Arc::new(client), cfg)?;
+        let client = auth::connect(saved)?;
+        crate::app::run(Arc::new(client), saved, accent)?;
         Ok(ExitCode::SUCCESS)
     }
 }

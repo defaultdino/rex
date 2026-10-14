@@ -4,7 +4,7 @@ use clap::Parser;
 use tracing::Level;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
-use crate::config::{self, Config};
+use crate::config::{self, Config, SavedState};
 
 mod debug;
 mod login;
@@ -34,14 +34,14 @@ pub struct Options {
 }
 
 impl Options {
-    pub fn run(self, cfg: &mut Config) -> anyhow::Result<ExitCode> {
+    pub fn run(self, cfg: &Config, saved: &mut SavedState) -> anyhow::Result<ExitCode> {
         use Subcommand as S;
         match self.subcommand {
-            Some(S::Login(c)) => c.run(cfg),
-            Some(S::Logout(c)) => c.run(cfg),
-            Some(S::Debug(c)) => c.run(cfg),
-            Some(S::Switch(c)) => c.run(cfg),
-            None => self::tui::Options::default().run(cfg),
+            Some(S::Login(c)) => c.run(saved),
+            Some(S::Logout(c)) => c.run(saved),
+            Some(S::Debug(c)) => c.run(saved),
+            Some(S::Switch(c)) => c.run(saved),
+            None => self::tui::Options::default().run(saved, cfg.accent_color.as_deref()),
         }
     }
 }
