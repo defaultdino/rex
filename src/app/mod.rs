@@ -174,11 +174,11 @@ fn shutdown(
     let same_library = disk
         .as_ref()
         .is_none_or(|d| d.server_id == saved.server_id && d.music_section == saved.music_section);
-    
+
     let mut out = disk.unwrap_or_else(|| std::mem::take(saved));
     let playback = &state.playback;
     out.volume = playback.now.volume;
-    
+
     if same_library {
         out.queue = playback.queue.save(playback.now.position_ms);
         if let Some(url) = state.server_url.take() {
@@ -365,7 +365,7 @@ impl ApiContext {
         {
             return ok;
         }
-        
+
         let result = auth::reconnect(
             &self.client,
             self.token.as_deref(),

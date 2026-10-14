@@ -83,7 +83,7 @@ impl Playback {
                 playback.media_controls_dirty = true;
             }
         }
-        
+
         playback
     }
 
@@ -265,7 +265,7 @@ impl Playback {
             _ => {}
         }
     }
-    
+
     // XXX: this function is getting impossible to maintain,
     // I would like to iron out this playback stuff eventually
     pub fn on_player(&mut self, ev: PlayerEvent) {

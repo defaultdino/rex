@@ -10,7 +10,7 @@ pub(super) struct Options {}
 
 impl Options {
     pub fn run(self, saved: &mut SavedState) -> anyhow::Result<ExitCode> {
-        // reset not only auth settings but 
+        // reset not only auth settings but
         // also user state
         saved.token = Some(auth::login(saved)?);
         saved.server_url = None;

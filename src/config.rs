@@ -135,7 +135,7 @@ impl SavedState {
         let tmp = path.with_extension("json.tmp");
         let mut opts = fs::OpenOptions::new();
         opts.write(true).create(true).truncate(true);
-        
+
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
         let mut f = opts

@@ -256,7 +256,7 @@ fn discover(
     let (srv, url, token, sec) = choices.swap_remove(i);
 
     info!("using server {} at {url}", srv.name);
-    // since a saved queues tracks only exist on 
+    // since a saved queues tracks only exist on
     // the library they came from we need to reset the queue
     if saved.server_id.as_ref() != Some(&srv.client_identifier)
         || saved.music_section.as_ref() != Some(&sec.key)
