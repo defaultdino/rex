@@ -57,6 +57,8 @@ enum Subcommand {
         /// Track rating keys, played in order
         #[arg(required = true)]
         tracks: Vec<String>,
+        #[arg(long, value_name = "IP")]
+        cast: Option<String>,
     },
 }
 
@@ -81,7 +83,7 @@ impl Options {
                 print_all(|start| client.playlist_tracks(&rk, start))?
             }
             SC::Search { query } => println!("{:#?}", client.search(&section, &query.join(" "))?),
-            SC::Play { tracks } => play(client, saved.volume, &tracks)?,
+            SC::Play { tracks, cast } => play(client, saved.volume, &tracks, cast)?,
         }
         Ok(ExitCode::SUCCESS)
     }
@@ -104,14 +106,21 @@ fn print_all<T: Debug>(mut fetch: impl FnMut(u32) -> Result<Page<T>>) -> Result<
     Ok(())
 }
 
-fn play(client: crate::plex::PlexClient, volume: f32, keys: &[String]) -> Result<()> {
+fn play(
+    client: crate::plex::PlexClient,
+    volume: f32,
+    keys: &[String],
+    cast: Option<String>,
+) -> Result<()> {
     let client = Arc::new(client);
     let tracks = keys
         .iter()
         .map(|k| client.track(k))
         .collect::<Result<Vec<_>>>()?;
-    let cache = config::dirs()?.cache_dir().join("stream");
-    let (cmd, events) = player::spawn(client, cache, volume)?;
+    let (cmd, events) = match cast {
+        Some(ip) => crate::cast::spawn(client, ip)?,
+        None => player::spawn(client, config::dirs()?.cache_dir().join("stream"), volume)?,
+    };
 
     let (line_tx, lines) = mpsc::channel();
     std::thread::spawn(move || {

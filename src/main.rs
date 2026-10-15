@@ -4,6 +4,7 @@ use std::process::ExitCode;
 
 mod app;
 mod audio;
+mod cast;
 mod commands;
 mod config;
 mod media_controls;

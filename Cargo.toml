@@ -14,15 +14,18 @@ assets = [
 
 [dependencies]
 anyhow = "1.0.104"
+cast-sender = "0.3"
 clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 cpal = "0.18.2"
 directories = "6.0.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+native-tls = { version = "0.2", features = ["vendored"] }
 ratatui = "0.30.2"
 rtrb = "0.4.0"
 rubato = "5.0.1"
 serde = { version = "1.0.229", features = ["derive", "rc"] }
 serde_json = "1.0.151"
+smol = "2"
 souvlaki = { version = "0.8.3", default-features = false, features = ["use_zbus"] }
 symphonia = { version = "0.6.1", default-features = false, features = ["flac", "mp3", "aac", "alac", "isomp4", "vorbis", "ogg", "wav", "pcm", "id3v2", "opt-simd"] }
 toml = "1.1.6"
