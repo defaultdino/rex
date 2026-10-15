@@ -17,7 +17,7 @@ use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use tracing::warn;
 
 use crate::audio::player;
-use crate::backend::{PlayerCmd, PlayerEvent};
+use crate::backend::PlayerEvent;
 use crate::config::{self, SavedState};
 use crate::media_controls::{MediaControls, run_main_loop};
 use crate::plex::api::SearchResults;
@@ -69,6 +69,12 @@ pub enum ApiRequest {
     },
     #[cfg(feature = "cast")]
     Discover,
+    #[cfg(feature = "cast")]
+    Cast {
+        name: String,
+        ip: std::net::IpAddr,
+        volume: f32,
+    },
 }
 
 pub enum PageData {
@@ -105,6 +111,17 @@ pub enum AppEvent {
     Reconnected(String),
     #[cfg(feature = "cast")]
     Devices(Result<Vec<crate::cast::Device>, String>),
+    #[cfg(feature = "cast")]
+    Cast {
+        name: String,
+        result: Result<
+            (
+                SyncSender<crate::backend::PlayerCmd>,
+                thread::JoinHandle<()>,
+            ),
+            String,
+        >,
+    },
 }
 
 pub fn run(client: Arc<PlexClient>, saved: &mut SavedState, accent: Option<&str>) -> Result<()> {
@@ -128,16 +145,15 @@ pub fn run(client: Arc<PlexClient>, saved: &mut SavedState, accent: Option<&str>
     let media_controls = MediaControls::start(tx.clone());
     spawn_input(tx)?;
 
-    let mut app = AppState::new(api_tx, player_tx.clone(), saved.volume, saved.queue.take());
+    let mut app = AppState::new(api_tx, player_tx, saved.volume, saved.queue.take());
     app.set_accent(accent);
-    spawn_tui(rx, app, player_tx, media_controls, &client, saved)
+    spawn_tui(rx, app, media_controls, &client, saved)
 }
 
 /// runs the ui on a scoped thread while the main thread runs the platform run loop
 fn spawn_tui(
     rx: Receiver<AppEvent>,
     mut state: AppState,
-    player_tx: SyncSender<PlayerCmd>,
     mut media_controls: Option<MediaControls>,
     client: &PlexClient,
     saved: &mut SavedState,
@@ -157,7 +173,7 @@ fn spawn_tui(
                 );
                 ratatui::restore();
 
-                shutdown(&mut state, &player_tx, client, saved)?;
+                shutdown(&mut state, client, saved)?;
                 result
             })?;
         run_main_loop(&tui);
@@ -166,13 +182,10 @@ fn spawn_tui(
 }
 
 /// stops playback, sends the final playback reports and saves what the session changed
-fn shutdown(
-    state: &mut AppState,
-    player: &SyncSender<PlayerCmd>,
-    client: &PlexClient,
-    saved: &mut SavedState,
-) -> Result<()> {
-    let _ = player.send(PlayerCmd::Stop);
+fn shutdown(state: &mut AppState, client: &PlexClient, saved: &mut SavedState) -> Result<()> {
+    state.playback.stop_player();
+    #[cfg(feature = "cast")]
+    state.release_cast();
     for r in state.playback.reporter.stopped() {
         send_report(client, &r);
     }
@@ -263,6 +276,8 @@ fn handle(state: &mut AppState, ev: AppEvent) {
         }
         #[cfg(feature = "cast")]
         AppEvent::Devices(result) => state.on_devices(result),
+        #[cfg(feature = "cast")]
+        AppEvent::Cast { name, result } => state.on_cast(name, result),
     }
     if let Some(m) = state.playback.notice.take() {
         state.message = Some(m);
@@ -428,6 +443,16 @@ impl ApiContext {
                 crate::cast::discover(DISCOVER_WAIT)
                     .map_err(|e| format!("finding cast devices: {e}")),
             ),
+            #[cfg(feature = "cast")]
+            ApiRequest::Cast { name, ip, volume } => AppEvent::Cast {
+                name,
+                result: crate::cast::spawn(self.client.clone(), ip, volume)
+                    .and_then(|((player, events), cast)| {
+                        spawn_forwarder(events, self.tx.clone())?;
+                        Ok((player, cast))
+                    })
+                    .map_err(err),
+            },
         })
     }
 }

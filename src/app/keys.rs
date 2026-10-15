@@ -92,7 +92,7 @@ pub const SEARCH_INPUT_KEYS: &[Action] = &[Action::SearchSubmit, Action::SearchC
 pub const HELP_KEYS: &[Action] = &[Action::Help, Action::Quit, Action::Back];
 
 #[cfg(feature = "cast")]
-pub const CAST_KEYS: &[Action] = &[Action::Down, Action::Up, Action::Back];
+pub const CAST_KEYS: &[Action] = &[Action::Down, Action::Up, Action::Open, Action::Back];
 
 impl Action {
     pub fn describe_short(self) -> &'static str {

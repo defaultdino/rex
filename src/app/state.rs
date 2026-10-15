@@ -16,6 +16,8 @@ use crate::backend::PlayerCmd;
 
 const MESSAGE_TTL: Duration = Duration::from_secs(5);
 const QUIT_CONFIRM: Duration = Duration::from_secs(3);
+#[cfg(feature = "cast")]
+const CAST_STOP_WAIT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -28,7 +30,6 @@ pub enum Focus {
 pub enum Modal {
     Search(String),
     Help,
-    /// `devices` is `None` while discovery runs
     #[cfg(feature = "cast")]
     Cast {
         devices: Option<Result<Vec<crate::cast::Device>, String>>,
@@ -81,6 +82,10 @@ pub struct AppState {
     pub quit: bool,
     #[cfg(feature = "cast")]
     api: SyncSender<ApiRequest>,
+    #[cfg(feature = "cast")]
+    local_player: SyncSender<PlayerCmd>,
+    #[cfg(feature = "cast")]
+    cast: Option<std::thread::JoinHandle<()>>,
 }
 
 impl AppState {
@@ -96,6 +101,10 @@ impl AppState {
             browser: Browser::new(api.clone()),
             #[cfg(feature = "cast")]
             api: api.clone(),
+            #[cfg(feature = "cast")]
+            local_player: player.clone(),
+            #[cfg(feature = "cast")]
+            cast: None,
             playback: Playback::new(api, player, volume, saved),
             quit_armed: None,
             server_url: None,
@@ -182,13 +191,19 @@ impl AppState {
         }
         #[cfg(feature = "cast")]
         if let Some(Modal::Cast { devices, selected }) = &mut self.modal {
-            let len = devices
-                .as_ref()
-                .and_then(|d| d.as_ref().ok())
-                .map_or(0, Vec::len);
+            let found = devices.as_ref().and_then(|d| d.as_ref().ok());
+            let len = found.map_or(0, Vec::len);
             match action {
                 Action::Down => *selected = (*selected + 1).min(len.saturating_sub(1)),
                 Action::Up => *selected = selected.saturating_sub(1),
+                Action::Open => {
+                    let device = found.and_then(|d| d.get(*selected));
+                    let target = device.map(|d| (d.name.clone(), d.ip));
+                    self.modal = None;
+                    if let Some((name, ip)) = target {
+                        self.cast_to(name, ip);
+                    }
+                }
                 _ => self.modal = None,
             }
             return;
@@ -267,12 +282,51 @@ impl AppState {
         }
     }
 
-    /// discovery finished; dropped when the picker was closed meanwhile
     #[cfg(feature = "cast")]
     pub fn on_devices(&mut self, result: Result<Vec<crate::cast::Device>, String>) {
         if let Some(Modal::Cast { devices, selected }) = &mut self.modal {
             *devices = Some(result);
             *selected = 0;
+        }
+    }
+
+    #[cfg(feature = "cast")]
+    fn cast_to(&mut self, name: String, ip: std::net::IpAddr) {
+        let volume = self.playback.now.volume;
+        let req = ApiRequest::Cast {
+            name: name.clone(),
+            ip,
+            volume,
+        };
+        if self.api.try_send(req).is_err() {
+            return self.error("can't start casting, API queue full".into());
+        }
+        self.info(format!("connecting to {name}…"));
+    }
+
+    #[cfg(feature = "cast")]
+    pub fn on_cast(
+        &mut self,
+        name: String,
+        result: Result<(SyncSender<PlayerCmd>, std::thread::JoinHandle<()>), String>,
+    ) {
+        match result {
+            Ok((player, cast)) => {
+                drop(self.playback.switch_player(player));
+                self.cast = Some(cast);
+                self.info(format!("casting to {name}"));
+            }
+            Err(e) => self.error(format!("can't cast to {name}: {e}")),
+        }
+    }
+
+    #[cfg(feature = "cast")]
+    pub fn release_cast(&mut self) {
+        let Some(cast) = self.cast.take() else { return };
+        drop(self.playback.replace_player(self.local_player.clone()));
+        let deadline = Instant::now() + CAST_STOP_WAIT;
+        while !cast.is_finished() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
         }
     }
 

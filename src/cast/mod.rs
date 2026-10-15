@@ -20,11 +20,7 @@ use crate::backend::Channels;
 use crate::plex::PlexClient;
 use caster::Caster;
 
-#[allow(dead_code)]
-pub fn spawn(plex: Arc<PlexClient>, ip: &str, volume: f32) -> Result<(Channels, JoinHandle<()>)> {
-    let ip: IpAddr = ip
-        .parse()
-        .with_context(|| format!("{ip} is not an IP address"))?;
+pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr, volume: f32) -> Result<(Channels, JoinHandle<()>)> {
     let first = block_on(io::connect(ip)).with_context(|| format!("casting to {ip}"))?;
     let (cmd_tx, cmd_rx) = sync_channel(32);
     let (ev_tx, ev_rx) = sync_channel(256);

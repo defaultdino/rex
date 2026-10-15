@@ -107,6 +107,35 @@ impl Playback {
         }
     }
 
+    pub fn stop_player(&self) {
+        let _ = self.player.send(PlayerCmd::Stop);
+    }
+
+    #[cfg(feature = "cast")]
+    pub fn replace_player(&mut self, player: SyncSender<PlayerCmd>) -> SyncSender<PlayerCmd> {
+        std::mem::replace(&mut self.player, player)
+    }
+
+    #[cfg(feature = "cast")]
+    pub fn switch_player(&mut self, player: SyncSender<PlayerCmd>) -> SyncSender<PlayerCmd> {
+        self.send(PlayerCmd::Stop);
+        let old = self.replace_player(player);
+        if self.now.track.is_none() || self.queue.current.is_none() {
+            return old;
+        }
+        let playing = !self.now.paused && self.resume_ms.is_none();
+        self.resume_ms = Some(self.resume_ms.unwrap_or(self.now.position_ms));
+        self.now.paused = true;
+        self.now.buffering = false;
+        self.loading = None;
+        self.enqueued = None;
+        self.seek_on_start = None;
+        if playing {
+            self.toggle_pause();
+        }
+        old
+    }
+
     /// one request per event so a worker sends them in order (e.g. stopped before playing)
     fn report(&self, reports: Vec<Report>) {
         if !reports.is_empty() && self.api.try_send(ApiRequest::Report(reports)).is_err() {
