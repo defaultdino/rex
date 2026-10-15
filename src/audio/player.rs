@@ -443,8 +443,8 @@ impl Player {
             let Some((at, track)) = self.starts.pop_front() else {
                 break;
             };
-            if let Some(p) = self.playing.take() {
-                self.emit(PlayerEvent::TrackEnded(p.track.rating_key.clone()));
+            if self.playing.take().is_some() {
+                self.emit(PlayerEvent::TrackEnded);
             }
             self.emit(PlayerEvent::TrackStarted(track.clone()));
             self.playing = Some(Playing {
@@ -460,8 +460,8 @@ impl Player {
             && self.ready_pos >= self.ready.len()
         {
             self.end_at = None;
-            if let Some(p) = self.playing.take() {
-                self.emit(PlayerEvent::TrackEnded(p.track.rating_key.clone()));
+            if self.playing.take().is_some() {
+                self.emit(PlayerEvent::TrackEnded);
             }
             if self.next_pending.is_none() {
                 self.out.suspend();

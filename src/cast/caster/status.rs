@@ -154,8 +154,10 @@ impl Caster {
         self.queued = None;
         self.position = Position::still(0);
         self.set_buffering(false);
-        let Some(c) = self.current.take() else { return };
-        self.emit(PlayerEvent::TrackEnded(c.track.rating_key.clone()));
+        if self.current.take().is_none() {
+            return;
+        }
+        self.emit(PlayerEvent::TrackEnded);
         if let Some(next) = self.wanted_next.take() {
             self.start(next);
         }
@@ -177,7 +179,7 @@ impl Caster {
         };
         self.awaiting_advance = None;
         self.position = Position::still(0);
-        self.emit(PlayerEvent::TrackEnded(c.track.rating_key.clone()));
+        self.emit(PlayerEvent::TrackEnded);
         if self
             .wanted_next
             .as_ref()

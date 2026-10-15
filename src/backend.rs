@@ -1,5 +1,5 @@
 //! The contract between `Playback` and whatever plays the audio: the local player or a cast
-//! device. A backend runs on its own thread, takes `PlayerCmd`s and answers with `PlayerEvent`s.
+//! device. A backend runs on its own thread, takes `PlayerCmd`s and answers with `PlayerEvent`s
 
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, SyncSender};
@@ -24,7 +24,7 @@ pub enum PlayerCmd {
 pub enum PlayerEvent {
     Position(u64),
     TrackStarted(Arc<Track>),
-    TrackEnded(String),
+    TrackEnded,
     Error {
         rating_key: Option<String>,
         message: String,

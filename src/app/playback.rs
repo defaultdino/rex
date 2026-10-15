@@ -307,7 +307,7 @@ impl Playback {
                 }
                 self.sync_next();
             }
-            PlayerEvent::TrackEnded(_) => {
+            PlayerEvent::TrackEnded => {
                 let reports = self.reporter.ended();
                 self.report(reports);
                 self.media_controls_dirty = true;

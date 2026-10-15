@@ -179,8 +179,13 @@ impl Caster {
         let Some(next) = self.wanted_next.clone() else {
             return;
         };
-        let Ok(media) = self.media_info(&next) else {
-            return;
+        // fail it now like the local player does, so `Playback` skips it when the current one ends
+        let media = match self.media_info(&next) {
+            Ok(m) => m,
+            Err(why) => {
+                self.wanted_next = None;
+                return self.fail(Some(&next.rating_key), format!("{}: {why}", next.title));
+            }
         };
         let content_url = media.content_id.clone();
         let item = QueueItem {

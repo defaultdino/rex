@@ -6,7 +6,6 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
 use crate::config::{self, Config, SavedState};
 
-mod debug;
 mod login;
 mod logout;
 mod switch;
@@ -18,8 +17,6 @@ enum Subcommand {
     Login(self::login::Options),
     /// Remove saved tokens
     Logout(self::logout::Options),
-    /// Query the Plex server without the TUI
-    Debug(self::debug::Options),
     /// Switch media libraries
     Switch(self::switch::Options),
 }
@@ -39,7 +36,6 @@ impl Options {
         match self.subcommand {
             Some(S::Login(c)) => c.run(saved),
             Some(S::Logout(c)) => c.run(saved),
-            Some(S::Debug(c)) => c.run(saved),
             Some(S::Switch(c)) => c.run(saved),
             None => self::tui::Options::default().run(saved, cfg.accent_color.as_deref()),
         }
