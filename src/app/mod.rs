@@ -31,6 +31,8 @@ use state::AppState;
 const API_WORKERS: usize = 2;
 const REPORT_TIMEOUT: Duration = Duration::from_secs(3);
 const RECONNECT_EVERY: Duration = Duration::from_secs(30);
+#[cfg(feature = "cast")]
+const DISCOVER_WAIT: Duration = Duration::from_millis(1500);
 
 #[derive(Debug, Clone)]
 pub enum AddMode {
@@ -65,6 +67,8 @@ pub enum ApiRequest {
     Cover {
         thumb: String,
     },
+    #[cfg(feature = "cast")]
+    Discover,
 }
 
 pub enum PageData {
@@ -99,6 +103,8 @@ pub enum AppEvent {
     Signal,
     /// the server answered again at this address after rediscovery
     Reconnected(String),
+    #[cfg(feature = "cast")]
+    Devices(Result<Vec<crate::cast::Device>, String>),
 }
 
 pub fn run(client: Arc<PlexClient>, saved: &mut SavedState, accent: Option<&str>) -> Result<()> {
@@ -255,6 +261,8 @@ fn handle(state: &mut AppState, ev: AppEvent) {
             state.info(format!("reconnected to the server at {url}"));
             state.server_url = Some(url);
         }
+        #[cfg(feature = "cast")]
+        AppEvent::Devices(result) => state.on_devices(result),
     }
     if let Some(m) = state.playback.notice.take() {
         state.message = Some(m);
@@ -415,6 +423,11 @@ impl ApiContext {
                 result: self.call(|| fetch_cover(c, &thumb)).map_err(err),
                 thumb,
             },
+            #[cfg(feature = "cast")]
+            ApiRequest::Discover => AppEvent::Devices(
+                crate::cast::discover(DISCOVER_WAIT)
+                    .map_err(|e| format!("finding cast devices: {e}")),
+            ),
         })
     }
 }

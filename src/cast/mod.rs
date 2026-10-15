@@ -5,6 +5,8 @@ mod caster;
 mod discover;
 mod io;
 
+pub use discover::{Device, discover};
+
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::mpsc::sync_channel;

@@ -9,7 +9,7 @@ const TXT: u16 = 16;
 const SRV: u16 = 33;
 const CAST_PORT: u16 = 8009;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Device {
     pub name: String,
     pub ip: IpAddr,
@@ -17,8 +17,6 @@ pub struct Device {
 
 /// Collects the devices that answer within `wait`, sorted by name
 // shortcut: ipv4 on the default route's interface only, query each interface if devices go missing
-// shortcut: nothing calls this until the tui can cast, drop the allow in that pr
-#[allow(dead_code)]
 pub fn discover(wait: Duration) -> io::Result<Vec<Device>> {
     let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
     socket.send_to(&query(), MDNS)?;
@@ -26,7 +24,7 @@ pub fn discover(wait: Duration) -> io::Result<Vec<Device>> {
     let deadline = Instant::now() + wait;
     let mut devices: Vec<Device> = Vec::new();
     let mut buf = [0; 9000];
-    
+
     while let Some(left) = deadline
         .checked_duration_since(Instant::now())
         .filter(|d| !d.is_zero())
@@ -67,13 +65,13 @@ fn parse(p: &[u8]) -> Option<String> {
         .map(|i| u16_at(p, i).map(usize::from))
         .sum::<Option<usize>>()?;
     let mut i = 12;
-    
+
     for _ in 0..questions {
         i = name_at(p, i)?.1 + 4;
     }
-    
+
     let (mut ports, mut names) = (Vec::new(), Vec::new());
-    
+
     for _ in 0..records {
         let (owner, at) = name_at(p, i)?;
         let kind = u16_at(p, at)?;
@@ -86,7 +84,7 @@ fn parse(p: &[u8]) -> Option<String> {
         }
         i = at + 10 + len;
     }
-    
+
     names
         .into_iter()
         .find(|(owner, _)| {
@@ -104,8 +102,9 @@ fn u16_at(p: &[u8], i: usize) -> Option<u16> {
 fn name_at(p: &[u8], mut i: usize) -> Option<(String, usize)> {
     let mut name = String::new();
     let mut end = None;
-   
-    for _ in 0..128 { // prevent hostile packet loop
+
+    for _ in 0..128 {
+        // prevent hostile packet loop
         let len = usize::from(*p.get(i)?);
         if len & 0xc0 == 0xc0 {
             end.get_or_insert(i + 2);
@@ -120,7 +119,7 @@ fn name_at(p: &[u8], mut i: usize) -> Option<(String, usize)> {
             i += 1 + len;
         }
     }
-    
+
     None
 }
 

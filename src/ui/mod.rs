@@ -34,6 +34,50 @@ pub fn draw(f: &mut Frame, s: &mut AppState) {
     if s.modal == Some(Modal::Help) {
         draw_help(f);
     }
+    #[cfg(feature = "cast")]
+    if let Some(Modal::Cast { devices, selected }) = &s.modal {
+        draw_cast(f, devices.as_ref(), *selected, s.accent);
+    }
+}
+
+#[cfg(feature = "cast")]
+fn draw_cast(
+    f: &mut Frame,
+    devices: Option<&Result<Vec<crate::cast::Device>, String>>,
+    selected: usize,
+    accent: Color,
+) {
+    let lines: Vec<Line> = match devices {
+        None => vec![Line::raw("looking for devices…")],
+        Some(Err(e)) => vec![Line::styled(e.as_str(), Style::new().fg(Color::Red))],
+        Some(Ok(d)) if d.is_empty() => vec![Line::raw("no cast devices found")],
+        Some(Ok(d)) => d
+            .iter()
+            .enumerate()
+            .map(|(i, dev)| {
+                let line = Line::raw(format!("{}  {}", dev.name, dev.ip));
+                if i == selected {
+                    line.style(selected_style(true, accent))
+                } else {
+                    line
+                }
+            })
+            .collect(),
+    };
+    let area = f.area();
+    let width = 50.min(area.width);
+    let height = (lines.len() as u16 + 2).min(area.height);
+    let popup = Rect {
+        x: area.x + (area.width - width) / 2,
+        y: area.y + (area.height - height) / 2,
+        width,
+        height,
+    };
+    let block = Block::bordered().title(" Cast to — Esc to close ");
+    let inner = block.inner(popup);
+    f.render_widget(Clear, popup);
+    f.render_widget(block, popup);
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 fn draw_minimized_player_layout(f: &mut Frame, s: &mut AppState, area: Rect) {

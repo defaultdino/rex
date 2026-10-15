@@ -28,6 +28,12 @@ pub enum Focus {
 pub enum Modal {
     Search(String),
     Help,
+    /// `devices` is `None` while discovery runs
+    #[cfg(feature = "cast")]
+    Cast {
+        devices: Option<Result<Vec<crate::cast::Device>, String>>,
+        selected: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +79,8 @@ pub struct AppState {
     pub accent: Color,
     pub message: Option<Message>,
     pub quit: bool,
+    #[cfg(feature = "cast")]
+    api: SyncSender<ApiRequest>,
 }
 
 impl AppState {
@@ -86,6 +94,8 @@ impl AppState {
             screen: Screen::Browse(Focus::List),
             modal: None,
             browser: Browser::new(api.clone()),
+            #[cfg(feature = "cast")]
+            api: api.clone(),
             playback: Playback::new(api, player, volume, saved),
             quit_armed: None,
             server_url: None,
@@ -140,6 +150,8 @@ impl AppState {
         let groups: &[&[Action]] = match (&self.modal, self.screen) {
             (Some(Modal::Search(_)), _) => &[SEARCH_INPUT_KEYS],
             (Some(Modal::Help), _) => &[HELP_KEYS],
+            #[cfg(feature = "cast")]
+            (Some(Modal::Cast { .. }), _) => &[keys::CAST_KEYS],
             (None, Screen::Player) => &[MAXIMIZED_PLAYER_KEYS, GLOBAL_PLAYER_KEYS],
             (None, Screen::Browse(Focus::Sidebar)) => &[NAV_KEYS, GLOBAL_PLAYER_KEYS],
             (None, Screen::Browse(Focus::List)) => match self.browser.view().map(|v| &v.kind) {
@@ -166,6 +178,19 @@ impl AppState {
         // every key the help modal accepts closes it
         if self.modal == Some(Modal::Help) {
             self.modal = None;
+            return;
+        }
+        #[cfg(feature = "cast")]
+        if let Some(Modal::Cast { devices, selected }) = &mut self.modal {
+            let len = devices
+                .as_ref()
+                .and_then(|d| d.as_ref().ok())
+                .map_or(0, Vec::len);
+            match action {
+                Action::Down => *selected = (*selected + 1).min(len.saturating_sub(1)),
+                Action::Up => *selected = selected.saturating_sub(1),
+                _ => self.modal = None,
+            }
             return;
         }
 
@@ -229,6 +254,25 @@ impl AppState {
             }
             // routed through on_search_key while the search modal is open, never via lookup
             Action::SearchSubmit | Action::SearchCancel => {}
+            #[cfg(feature = "cast")]
+            Action::Cast => {
+                if self.api.try_send(ApiRequest::Discover).is_err() {
+                    return self.error("can't look for cast devices, API queue full".into());
+                }
+                self.modal = Some(Modal::Cast {
+                    devices: None,
+                    selected: 0,
+                });
+            }
+        }
+    }
+
+    /// discovery finished; dropped when the picker was closed meanwhile
+    #[cfg(feature = "cast")]
+    pub fn on_devices(&mut self, result: Result<Vec<crate::cast::Device>, String>) {
+        if let Some(Modal::Cast { devices, selected }) = &mut self.modal {
+            *devices = Some(result);
+            *selected = 0;
         }
     }
 

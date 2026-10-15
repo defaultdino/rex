@@ -37,6 +37,8 @@ pub enum Action {
     TogglePlayer,
     SearchSubmit,
     SearchCancel,
+    #[cfg(feature = "cast")]
+    Cast,
 }
 
 pub const GLOBAL_PLAYER_KEYS: &[Action] = &[
@@ -52,6 +54,8 @@ pub const GLOBAL_PLAYER_KEYS: &[Action] = &[
     Action::Help,
     Action::Quit,
     Action::TogglePlayer,
+    #[cfg(feature = "cast")]
+    Action::Cast,
 ];
 
 pub const NAV_KEYS: &[Action] = &[
@@ -86,6 +90,9 @@ pub const MAXIMIZED_PLAYER_KEYS: &[Action] = &[];
 pub const SEARCH_INPUT_KEYS: &[Action] = &[Action::SearchSubmit, Action::SearchCancel];
 
 pub const HELP_KEYS: &[Action] = &[Action::Help, Action::Quit, Action::Back];
+
+#[cfg(feature = "cast")]
+pub const CAST_KEYS: &[Action] = &[Action::Down, Action::Up, Action::Back];
 
 impl Action {
     pub fn describe_short(self) -> &'static str {
@@ -134,6 +141,8 @@ impl Action {
             Action::TogglePlayer => "toggle player maximized/minimized",
             Action::SearchSubmit => "search",
             Action::SearchCancel => "cancel",
+            #[cfg(feature = "cast")]
+            Action::Cast => "cast to a device",
         }
     }
 }
@@ -235,6 +244,8 @@ pub const BINDINGS: &[Binding] = &[
     help_bar_only(bind(Action::SearchSubmit, &[code(KeyCode::Enter)])),
     help_bar_only(bind(Action::SearchCancel, &[code(KeyCode::Esc)])),
     bind(Action::TogglePlayer, &[key('m')]),
+    #[cfg(feature = "cast")]
+    bind(Action::Cast, &[key('c')]),
 ];
 
 pub fn lookup(k: KeyEvent) -> Option<Action> {
