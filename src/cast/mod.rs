@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
 use std::thread::{self, JoinHandle};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use smol::block_on;
 use smol::channel;
 
@@ -21,6 +21,10 @@ use crate::plex::PlexClient;
 use caster::Caster;
 
 pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr, volume: f32) -> Result<(Channels, JoinHandle<()>)> {
+    let server = plex.base();
+    if loopback(&server) {
+        bail!("rex reaches plex at {server}, which the device can't");
+    }
     let first = block_on(io::connect(ip)).with_context(|| format!("casting to {ip}"))?;
     let (cmd_tx, cmd_rx) = sync_channel(32);
     let (ev_tx, ev_rx) = sync_channel(256);
@@ -40,4 +44,20 @@ pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr, volume: f32) -> Result<(Channels
         .name("cast".into())
         .spawn(move || block_on(io::run(Caster::new(plex, ev_tx, volume), ip, first, fwd_rx)))?;
     Ok(((cmd_tx, ev_rx), cast))
+}
+
+fn loopback(url: &str) -> bool {
+    let Some(host) = url
+        .parse::<ureq::http::Uri>()
+        .ok()
+        .and_then(|u| u.host().map(str::to_owned))
+    else {
+        return false;
+    };
+    // plex.direct names spell the ip in their first label: 127-0-0-1.<id>.plex.direct
+    let label = host.split('.').next().unwrap_or_default().replace('-', ".");
+    host == "localhost"
+        || [host.trim_matches(['[', ']']), &label]
+            .iter()
+            .any(|h| h.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback()))
 }

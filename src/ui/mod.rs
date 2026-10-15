@@ -47,23 +47,25 @@ fn draw_cast(
     selected: usize,
     accent: Color,
 ) {
-    let lines: Vec<Line> = match devices {
-        None => vec![Line::raw("looking for devices…")],
-        Some(Err(e)) => vec![Line::styled(e.as_str(), Style::new().fg(Color::Red))],
-        Some(Ok(d)) if d.is_empty() => vec![Line::raw("no cast devices found")],
-        Some(Ok(d)) => d
-            .iter()
-            .enumerate()
-            .map(|(i, dev)| {
-                let line = Line::raw(format!("{}  {}", dev.name, dev.ip));
-                if i == selected {
-                    line.style(selected_style(true, accent))
-                } else {
-                    line
-                }
-            })
-            .collect(),
+    let row = |i: usize, text: String| {
+        let line = Line::raw(text);
+        if i == selected {
+            line.style(selected_style(true, accent))
+        } else {
+            line
+        }
     };
+    let mut lines = vec![row(0, "this computer".into())];
+    match devices {
+        None => lines.push(Line::raw("looking for devices…")),
+        Some(Err(e)) => lines.push(Line::styled(e.as_str(), Style::new().fg(Color::Red))),
+        Some(Ok(d)) if d.is_empty() => lines.push(Line::raw("no cast devices found")),
+        Some(Ok(d)) => lines.extend(
+            d.iter()
+                .enumerate()
+                .map(|(i, dev)| row(i + 1, format!("{}  {}", dev.name, dev.ip))),
+        ),
+    }
     let area = f.area();
     let width = 50.min(area.width);
     let height = (lines.len() as u16 + 2).min(area.height);

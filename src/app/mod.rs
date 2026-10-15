@@ -71,6 +71,7 @@ pub enum ApiRequest {
     Discover,
     #[cfg(feature = "cast")]
     Cast {
+        id: u64,
         name: String,
         ip: std::net::IpAddr,
         volume: f32,
@@ -103,7 +104,7 @@ pub enum AppEvent {
         thumb: String,
         result: Result<RgbImage, String>,
     },
-    Player(PlayerEvent),
+    Player(u64, PlayerEvent),
     MediaControl(MediaControlEvent),
     /// SIGTERM, SIGINT or SIGHUP
     Signal,
@@ -113,6 +114,7 @@ pub enum AppEvent {
     Devices(Result<Vec<crate::cast::Device>, String>),
     #[cfg(feature = "cast")]
     Cast {
+        id: u64,
         name: String,
         result: Result<
             (
@@ -137,7 +139,7 @@ pub fn run(client: Arc<PlexClient>, saved: &mut SavedState, accent: Option<&str>
     let (player_tx, player_rx) = player::spawn(client.clone(), cache, saved.volume)?;
 
     spawn_api_workers(client.clone(), section, saved, api_rx, tx.clone())?;
-    spawn_forwarder(player_rx, tx.clone())?;
+    spawn_forwarder(player_rx, tx.clone(), 0)?;
 
     #[cfg(unix)]
     spawn_signals(tx.clone())?;
@@ -267,7 +269,8 @@ fn handle(state: &mut AppState, ev: AppEvent) {
             }
         }
         AppEvent::Cover { thumb, result } => state.playback.on_cover(thumb, result),
-        AppEvent::Player(ev) => state.playback.on_player(ev),
+        AppEvent::Player(id, ev) if id == state.backend => state.playback.on_player(ev),
+        AppEvent::Player(..) => {}
         AppEvent::MediaControl(MediaControlEvent::Quit) | AppEvent::Signal => state.quit = true,
         AppEvent::MediaControl(ev) => state.playback.on_media_control(ev),
         AppEvent::Reconnected(url) => {
@@ -277,7 +280,7 @@ fn handle(state: &mut AppState, ev: AppEvent) {
         #[cfg(feature = "cast")]
         AppEvent::Devices(result) => state.on_devices(result),
         #[cfg(feature = "cast")]
-        AppEvent::Cast { name, result } => state.on_cast(name, result),
+        AppEvent::Cast { id, name, result } => state.on_cast(id, name, result),
     }
     if let Some(m) = state.playback.notice.take() {
         state.message = Some(m);
@@ -333,12 +336,12 @@ fn send_report(c: &PlexClient, r: &Report) {
     }
 }
 
-fn spawn_forwarder(rx: Receiver<PlayerEvent>, tx: SyncSender<AppEvent>) -> Result<()> {
+fn spawn_forwarder(rx: Receiver<PlayerEvent>, tx: SyncSender<AppEvent>, id: u64) -> Result<()> {
     thread::Builder::new()
         .name("player-events".into())
         .spawn(move || {
             for ev in rx {
-                if tx.send(AppEvent::Player(ev)).is_err() {
+                if tx.send(AppEvent::Player(id, ev)).is_err() {
                     break;
                 }
             }
@@ -444,11 +447,17 @@ impl ApiContext {
                     .map_err(|e| format!("finding cast devices: {e}")),
             ),
             #[cfg(feature = "cast")]
-            ApiRequest::Cast { name, ip, volume } => AppEvent::Cast {
+            ApiRequest::Cast {
+                id,
+                name,
+                ip,
+                volume,
+            } => AppEvent::Cast {
+                id,
                 name,
                 result: crate::cast::spawn(self.client.clone(), ip, volume)
                     .and_then(|((player, events), cast)| {
-                        spawn_forwarder(events, self.tx.clone())?;
+                        spawn_forwarder(events, self.tx.clone(), id)?;
                         Ok((player, cast))
                     })
                     .map_err(err),

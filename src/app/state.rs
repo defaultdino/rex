@@ -80,12 +80,15 @@ pub struct AppState {
     pub accent: Color,
     pub message: Option<Message>,
     pub quit: bool,
+    pub backend: u64,
     #[cfg(feature = "cast")]
     api: SyncSender<ApiRequest>,
     #[cfg(feature = "cast")]
     local_player: SyncSender<PlayerCmd>,
     #[cfg(feature = "cast")]
     cast: Option<std::thread::JoinHandle<()>>,
+    #[cfg(feature = "cast")]
+    cast_request: u64,
 }
 
 impl AppState {
@@ -105,6 +108,9 @@ impl AppState {
             local_player: player.clone(),
             #[cfg(feature = "cast")]
             cast: None,
+            #[cfg(feature = "cast")]
+            cast_request: 0,
+            backend: 0,
             playback: Playback::new(api, player, volume, saved),
             quit_armed: None,
             server_url: None,
@@ -194,14 +200,17 @@ impl AppState {
             let found = devices.as_ref().and_then(|d| d.as_ref().ok());
             let len = found.map_or(0, Vec::len);
             match action {
-                Action::Down => *selected = (*selected + 1).min(len.saturating_sub(1)),
+                Action::Down => *selected = (*selected + 1).min(len),
                 Action::Up => *selected = selected.saturating_sub(1),
                 Action::Open => {
-                    let device = found.and_then(|d| d.get(*selected));
+                    let device = selected.checked_sub(1).and_then(|i| found?.get(i));
                     let target = device.map(|d| (d.name.clone(), d.ip));
+                    let local = *selected == 0;
                     self.modal = None;
-                    if let Some((name, ip)) = target {
-                        self.cast_to(name, ip);
+                    match target {
+                        Some((name, ip)) => self.cast_to(name, ip),
+                        None if local => self.play_locally(),
+                        None => {}
                     }
                 }
                 _ => self.modal = None,
@@ -292,11 +301,12 @@ impl AppState {
 
     #[cfg(feature = "cast")]
     fn cast_to(&mut self, name: String, ip: std::net::IpAddr) {
-        let volume = self.playback.now.volume;
+        self.cast_request += 1;
         let req = ApiRequest::Cast {
+            id: self.cast_request,
+            volume: self.playback.now.volume,
             name: name.clone(),
             ip,
-            volume,
         };
         if self.api.try_send(req).is_err() {
             return self.error("can't start casting, API queue full".into());
@@ -307,17 +317,33 @@ impl AppState {
     #[cfg(feature = "cast")]
     pub fn on_cast(
         &mut self,
+        id: u64,
         name: String,
         result: Result<(SyncSender<PlayerCmd>, std::thread::JoinHandle<()>), String>,
     ) {
+        if id != self.cast_request {
+            return;
+        }
         match result {
             Ok((player, cast)) => {
                 drop(self.playback.switch_player(player));
                 self.cast = Some(cast);
+                self.backend = id;
                 self.info(format!("casting to {name}"));
             }
             Err(e) => self.error(format!("can't cast to {name}: {e}")),
         }
+    }
+
+    #[cfg(feature = "cast")]
+    fn play_locally(&mut self) {
+        self.cast_request += 1;
+        if self.cast.take().is_none() {
+            return;
+        }
+        drop(self.playback.switch_player(self.local_player.clone()));
+        self.backend = 0;
+        self.info("playing on this computer".into());
     }
 
     #[cfg(feature = "cast")]

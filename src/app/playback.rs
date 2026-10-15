@@ -120,6 +120,7 @@ impl Playback {
     pub fn switch_player(&mut self, player: SyncSender<PlayerCmd>) -> SyncSender<PlayerCmd> {
         self.send(PlayerCmd::Stop);
         let old = self.replace_player(player);
+        self.send(PlayerCmd::SetVolume(self.now.volume));
         if self.now.track.is_none() || self.queue.current.is_none() {
             return old;
         }
