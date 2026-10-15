@@ -15,6 +15,7 @@ use super::decoder::Decoder;
 use super::output::Output;
 use super::resample::Resampler;
 use super::source::CachedHttpSource;
+use crate::backend::{Channels, PlayerCmd, PlayerEvent};
 use crate::plex::PlexClient;
 use crate::plex::models::Track;
 
@@ -22,37 +23,7 @@ const POSITION_EVERY: Duration = Duration::from_millis(250);
 const IDLE_POLL: Duration = Duration::from_millis(20);
 const FILL_BUDGET: Duration = Duration::from_millis(50);
 
-#[derive(Debug)]
-pub enum PlayerCmd {
-    Load(Arc<Track>),
-    EnqueueNext(Arc<Track>),
-    Play,
-    Pause,
-    Seek(u64),
-    Stop,
-    SetVolume(f32),
-    ClearNext,
-}
-
-#[derive(Debug)]
-pub enum PlayerEvent {
-    Position(u64),
-    TrackStarted(Arc<Track>),
-    TrackEnded(String),
-    Error {
-        rating_key: String,
-        message: String,
-    },
-    /// the player paused itself (the audio device is gone)
-    Paused,
-    BufferingChanged(bool),
-}
-
-pub fn spawn(
-    client: Arc<PlexClient>,
-    cache_dir: PathBuf,
-    volume: f32,
-) -> Result<(SyncSender<PlayerCmd>, Receiver<PlayerEvent>)> {
+pub fn spawn(client: Arc<PlexClient>, cache_dir: PathBuf, volume: f32) -> Result<Channels> {
     let (cmd_tx, cmd_rx) = sync_channel(32);
     let (ev_tx, ev_rx) = sync_channel(256);
     let (ready_tx, ready_rx) = channel();
@@ -199,8 +170,10 @@ impl Player {
             }
             Err(e) => {
                 self.paused = true;
-                let rk = self.playing.as_ref().map(|p| p.track.rating_key.clone());
-                self.error(&rk.unwrap_or_default(), format!("audio device lost: {e:#}"));
+                self.emit(PlayerEvent::Error {
+                    rating_key: self.playing.as_ref().map(|p| p.track.rating_key.clone()),
+                    message: format!("audio device lost: {e:#}"),
+                });
                 self.emit(PlayerEvent::Paused);
             }
         }
@@ -208,7 +181,7 @@ impl Player {
 
     fn error(&self, rating_key: &str, message: String) {
         self.emit(PlayerEvent::Error {
-            rating_key: rating_key.to_owned(),
+            rating_key: Some(rating_key.to_owned()),
             message,
         });
     }

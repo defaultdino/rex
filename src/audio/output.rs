@@ -9,6 +9,8 @@ use cpal::{FromSample, SampleFormat, SizedSample, Stream, StreamConfig};
 use rtrb::{Consumer, Producer, RingBuffer};
 use tracing::{debug, error, info};
 
+use crate::backend::perceptual_gain;
+
 #[derive(Default)]
 struct Shared {
     played: AtomicU64,
@@ -63,8 +65,9 @@ impl Output {
     }
 
     pub fn set_volume(&self, v: f32) {
-        let v = v.clamp(0.0, 1.0);
-        self.shared.gain.store((v * v * v).to_bits(), Relaxed);
+        self.shared
+            .gain
+            .store(perceptual_gain(v).to_bits(), Relaxed);
     }
 
     pub fn set_paused(&self, paused: bool) {

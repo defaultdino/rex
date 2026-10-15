@@ -4,6 +4,8 @@ use std::process::ExitCode;
 
 mod app;
 mod audio;
+mod backend;
+#[cfg(feature = "cast")]
 mod cast;
 mod commands;
 mod config;

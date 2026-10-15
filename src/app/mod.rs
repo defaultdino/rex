@@ -16,7 +16,8 @@ use image::RgbImage;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use tracing::warn;
 
-use crate::audio::player::{self, PlayerCmd, PlayerEvent};
+use crate::audio::player;
+use crate::backend::{PlayerCmd, PlayerEvent};
 use crate::config::{self, SavedState};
 use crate::media_controls::{MediaControls, run_main_loop};
 use crate::plex::api::SearchResults;

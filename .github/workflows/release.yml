@@ -24,13 +24,15 @@ jobs:
         id: version
         run: .github/scripts/release-version.sh
       - name: Install system libraries
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+        # libssl-dev: the optional `cast` feature links the system OpenSSL
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libssl-dev pkg-config
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --all-targets --features cast -- -D warnings
 
   package:
     needs: check

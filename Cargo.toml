@@ -14,18 +14,18 @@ assets = [
 
 [dependencies]
 anyhow = "1.0.104"
-cast-sender = "0.3"
+cast-sender = { version = "0.3", optional = true }
 clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 cpal = "0.18.2"
 directories = "6.0.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
-native-tls = { version = "0.2", features = ["vendored"] }
+native-tls = { version = "0.2", optional = true }
 ratatui = "0.30.2"
 rtrb = "0.4.0"
 rubato = "5.0.1"
 serde = { version = "1.0.229", features = ["derive", "rc"] }
 serde_json = "1.0.151"
-smol = "2"
+smol = { version = "2", optional = true }
 souvlaki = { version = "0.8.3", default-features = false, features = ["use_zbus"] }
 symphonia = { version = "0.6.1", default-features = false, features = ["flac", "mp3", "aac", "alac", "isomp4", "vorbis", "ogg", "wav", "pcm", "id3v2", "opt-simd"] }
 toml = "1.1.6"
@@ -35,6 +35,15 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 unicode-width = "0.2.2"
 ureq = { version = "3.4.2", features = ["json"] }
 uuid = { version = "1.27.0", features = ["v4"] }
+
+[features]
+default = []
+# this is relevant when someone with no desire of ever
+# casting wants to build from source. in portage this will also
+# allow us to set USE="-cast"
+cast = ["dep:cast-sender", "dep:smol", "tracing-subscriber/tracing-log"]
+# build OpenSSL from source and link it statically (needs perl, make and a C compiler)
+vendored-openssl = ["cast", "dep:native-tls", "native-tls/vendored"]
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4"

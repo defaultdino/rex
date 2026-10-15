@@ -7,8 +7,10 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use crate::audio::player::{self, PlayerCmd, PlayerEvent};
+use crate::audio::player;
+use crate::backend::{PlayerCmd, PlayerEvent};
 use crate::config::{self, SavedState};
+use crate::plex::PlexClient;
 use crate::plex::auth;
 use crate::plex::models::Page;
 
@@ -57,7 +59,9 @@ enum Subcommand {
         /// Track rating keys, played in order
         #[arg(required = true)]
         tracks: Vec<String>,
-        #[arg(long, value_name = "IP")]
+        /// Play on the cast device at this IP address instead
+        #[cfg_attr(feature = "cast", arg(long, value_name = "IP"))]
+        #[cfg_attr(not(feature = "cast"), arg(skip))]
         cast: Option<String>,
     },
 }
@@ -106,20 +110,16 @@ fn print_all<T: Debug>(mut fetch: impl FnMut(u32) -> Result<Page<T>>) -> Result<
     Ok(())
 }
 
-fn play(
-    client: crate::plex::PlexClient,
-    volume: f32,
-    keys: &[String],
-    cast: Option<String>,
-) -> Result<()> {
+fn play(client: PlexClient, volume: f32, keys: &[String], cast: Option<String>) -> Result<()> {
     let client = Arc::new(client);
     let tracks = keys
         .iter()
         .map(|k| client.track(k))
         .collect::<Result<Vec<_>>>()?;
     let (cmd, events) = match cast {
-        Some(ip) => crate::cast::spawn(client, ip)?,
-        None => player::spawn(client, config::dirs()?.cache_dir().join("stream"), volume)?,
+        #[cfg(feature = "cast")]
+        Some(ip) => crate::cast::spawn(client, &ip, volume)?,
+        _ => player::spawn(client, config::dirs()?.cache_dir().join("stream"), volume)?,
     };
 
     let (line_tx, lines) = mpsc::channel();
@@ -164,6 +164,10 @@ fn play(
             Ok(PlayerEvent::Paused) => {
                 paused = true;
                 eprintln!("\npaused by the player");
+            }
+            Ok(PlayerEvent::Resumed) => {
+                paused = false;
+                eprintln!("\nresumed by the player");
             }
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,

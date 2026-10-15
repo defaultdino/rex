@@ -12,7 +12,7 @@ use super::keys::{
 use super::playback::Playback;
 use super::queue::SavedQueue;
 use super::{AddMode, ApiRequest, TrackSource};
-use crate::audio::player::PlayerCmd;
+use crate::backend::PlayerCmd;
 
 const MESSAGE_TTL: Duration = Duration::from_secs(5);
 const QUIT_CONFIRM: Duration = Duration::from_secs(3);

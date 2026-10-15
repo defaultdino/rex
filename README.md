@@ -7,6 +7,18 @@
 
 There are a few packages available of this program for various linux flavours, just select one from the releases list.
 
+### Building from source
+
+```sh
+cargo install --path .                              # local playback only
+cargo install --path . --features cast              # + Chromecast / Google Cast, links the system OpenSSL
+cargo install --path . --features vendored-openssl  # + cast, with OpenSSL built in (needs perl, make and a C compiler)
+```
+
+Building needs the ALSA headers (`libasound2-dev` / `alsa-lib`) and `pkg-config`; `cast` also needs the OpenSSL headers (`libssl-dev` / `openssl`). Packagers can map `cast` to an optional feature, such as a `cast` USE flag.
+
+Try a cast device with `rex debug play <rating-key> --cast <device-ip>`. The device fetches the audio straight from your Plex server, so the server address must be reachable from it.
+
 ## Usage
 
 ```sh

@@ -11,7 +11,7 @@ use super::queue::{Queue, SavedQueue};
 use super::reporting::{Report, Reporter};
 use super::state::Message;
 use super::{AddMode, ApiRequest, TrackSource};
-use crate::audio::player::{PlayerCmd, PlayerEvent};
+use crate::backend::{PlayerCmd, PlayerEvent};
 use crate::plex::models::Track;
 
 const ENQUEUE_BEFORE_END_MS: u64 = 10_000;
@@ -328,6 +328,7 @@ impl Playback {
                 message,
             } => {
                 self.error(message);
+                let Some(rating_key) = rating_key else { return };
                 if self
                     .loading
                     .as_ref()
@@ -357,10 +358,11 @@ impl Playback {
                 }
             }
             PlayerEvent::BufferingChanged(b) => self.now.buffering = b,
-            PlayerEvent::Paused => {
-                if self.now.track.is_some() && !self.now.paused {
-                    self.now.paused = true;
-                    let reports = self.reporter.set_paused(true, Instant::now());
+            PlayerEvent::Paused | PlayerEvent::Resumed => {
+                let paused = matches!(ev, PlayerEvent::Paused);
+                if self.now.track.is_some() && self.now.paused != paused {
+                    self.now.paused = paused;
+                    let reports = self.reporter.set_paused(paused, Instant::now());
                     self.report(reports);
                     self.media_controls_dirty = true;
                 }
