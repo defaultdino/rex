@@ -1,4 +1,6 @@
 pub mod browser;
+#[cfg(feature = "cast")]
+pub mod cast;
 pub mod keys;
 pub mod now_playing;
 mod playback;
@@ -31,8 +33,6 @@ use state::AppState;
 const API_WORKERS: usize = 2;
 const REPORT_TIMEOUT: Duration = Duration::from_secs(3);
 const RECONNECT_EVERY: Duration = Duration::from_secs(30);
-#[cfg(feature = "cast")]
-const DISCOVER_WAIT: Duration = Duration::from_millis(1500);
 
 #[derive(Debug, Clone)]
 pub enum AddMode {
@@ -66,15 +66,6 @@ pub enum ApiRequest {
     Report(Vec<Report>),
     Cover {
         thumb: String,
-    },
-    #[cfg(feature = "cast")]
-    Discover,
-    #[cfg(feature = "cast")]
-    Cast {
-        id: u64,
-        name: String,
-        ip: std::net::IpAddr,
-        volume: f32,
     },
 }
 
@@ -111,19 +102,7 @@ pub enum AppEvent {
     /// the server answered again at this address after rediscovery
     Reconnected(String),
     #[cfg(feature = "cast")]
-    Devices(Result<Vec<crate::cast::Device>, String>),
-    #[cfg(feature = "cast")]
-    Cast {
-        id: u64,
-        name: String,
-        result: Result<
-            (
-                SyncSender<crate::backend::PlayerCmd>,
-                thread::JoinHandle<()>,
-            ),
-            String,
-        >,
-    },
+    Cast(cast::CastEvent),
 }
 
 pub fn run(client: Arc<PlexClient>, saved: &mut SavedState, accent: Option<&str>) -> Result<()> {
@@ -145,9 +124,18 @@ pub fn run(client: Arc<PlexClient>, saved: &mut SavedState, accent: Option<&str>
     spawn_signals(tx.clone())?;
 
     let media_controls = MediaControls::start(tx.clone());
+    #[cfg(feature = "cast")]
+    let cast = cast::CastState::new(tx.clone(), client.clone(), player_tx.clone());
     spawn_input(tx)?;
 
-    let mut app = AppState::new(api_tx, player_tx, saved.volume, saved.queue.take());
+    let mut app = AppState::new(
+        api_tx,
+        player_tx,
+        saved.volume,
+        saved.queue.take(),
+        #[cfg(feature = "cast")]
+        cast,
+    );
     app.set_accent(accent);
     spawn_tui(rx, app, media_controls, &client, saved)
 }
@@ -187,11 +175,17 @@ fn spawn_tui(
 fn shutdown(state: &mut AppState, client: &PlexClient, saved: &mut SavedState) -> Result<()> {
     state.playback.stop_player();
     #[cfg(feature = "cast")]
-    state.release_cast();
+    let cast = state.close_cast();
     for r in state.playback.reporter.stopped() {
         send_report(client, &r);
     }
+    let result = save_session(state, saved);
+    #[cfg(feature = "cast")]
+    cast::wait_closed(cast);
+    result
+}
 
+fn save_session(state: &mut AppState, saved: &mut SavedState) -> Result<()> {
     let disk = SavedState::read()?;
     let same_library = disk
         .as_ref()
@@ -278,9 +272,7 @@ fn handle(state: &mut AppState, ev: AppEvent) {
             state.server_url = Some(url);
         }
         #[cfg(feature = "cast")]
-        AppEvent::Devices(result) => state.on_devices(result),
-        #[cfg(feature = "cast")]
-        AppEvent::Cast { id, name, result } => state.on_cast(id, name, result),
+        AppEvent::Cast(ev) => state.on_cast_event(ev),
     }
     if let Some(m) = state.playback.notice.take() {
         state.message = Some(m);
@@ -440,27 +432,6 @@ impl ApiContext {
             ApiRequest::Cover { thumb } => AppEvent::Cover {
                 result: self.call(|| fetch_cover(c, &thumb)).map_err(err),
                 thumb,
-            },
-            #[cfg(feature = "cast")]
-            ApiRequest::Discover => AppEvent::Devices(
-                crate::cast::discover(DISCOVER_WAIT)
-                    .map_err(|e| format!("finding cast devices: {e}")),
-            ),
-            #[cfg(feature = "cast")]
-            ApiRequest::Cast {
-                id,
-                name,
-                ip,
-                volume,
-            } => AppEvent::Cast {
-                id,
-                name,
-                result: crate::cast::spawn(self.client.clone(), ip, volume)
-                    .and_then(|((player, events), cast)| {
-                        spawn_forwarder(events, self.tx.clone(), id)?;
-                        Ok((player, cast))
-                    })
-                    .map_err(err),
             },
         })
     }

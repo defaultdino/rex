@@ -9,20 +9,20 @@ const TXT: u16 = 16;
 const SRV: u16 = 33;
 const CAST_PORT: u16 = 8009;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Device {
     pub name: String,
     pub ip: IpAddr,
 }
 
-/// Collects the devices that answer within `wait`, sorted by name
+/// Calls `found` once for each device that answers within `wait`
 // shortcut: ipv4 on the default route's interface only, query each interface if devices go missing
-pub fn discover(wait: Duration) -> io::Result<Vec<Device>> {
+pub fn discover(wait: Duration, mut found: impl FnMut(Device)) -> io::Result<()> {
     let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
     socket.send_to(&query(), MDNS)?;
 
     let deadline = Instant::now() + wait;
-    let mut devices: Vec<Device> = Vec::new();
+    let mut seen: Vec<IpAddr> = Vec::new();
     let mut buf = [0; 9000];
 
     while let Some(left) = deadline
@@ -36,16 +36,16 @@ pub fn discover(wait: Duration) -> io::Result<Vec<Device>> {
             Err(e) => return Err(e),
         };
         if let Some(name) = parse(&buf[..len])
-            && !devices.iter().any(|d| d.ip == from.ip())
+            && !seen.contains(&from.ip())
         {
-            devices.push(Device {
+            seen.push(from.ip());
+            found(Device {
                 name,
                 ip: from.ip(),
             });
         }
     }
-    devices.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(devices)
+    Ok(())
 }
 
 fn query() -> Vec<u8> {

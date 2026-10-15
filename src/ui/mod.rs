@@ -31,50 +31,43 @@ pub fn draw(f: &mut Frame, s: &mut AppState) {
     }
 
     draw_help_bar(f, s, help_bar);
-    if s.modal == Some(Modal::Help) {
+    if matches!(s.modal, Some(Modal::Help)) {
         draw_help(f);
     }
     #[cfg(feature = "cast")]
-    if let Some(Modal::Cast { devices, selected }) = &s.modal {
-        draw_cast(f, devices.as_ref(), *selected, s.accent);
+    if let Some(Modal::Cast(p)) = &s.modal {
+        draw_cast(f, p, s.accent);
     }
 }
 
 #[cfg(feature = "cast")]
-fn draw_cast(
-    f: &mut Frame,
-    devices: Option<&Result<Vec<crate::cast::Device>, String>>,
-    selected: usize,
-    accent: Color,
-) {
+fn draw_cast(f: &mut Frame, p: &crate::app::cast::Picker, accent: Color) {
+    use crate::app::cast::Search;
     let row = |i: usize, text: String| {
         let line = Line::raw(text);
-        if i == selected {
+        if i == p.selected {
             line.style(selected_style(true, accent))
         } else {
             line
         }
     };
     let mut lines = vec![row(0, "this computer".into())];
-    match devices {
-        None => lines.push(Line::raw("looking for devices…")),
-        Some(Err(e)) => lines.push(Line::styled(e.as_str(), Style::new().fg(Color::Red))),
-        Some(Ok(d)) if d.is_empty() => lines.push(Line::raw("no cast devices found")),
-        Some(Ok(d)) => lines.extend(
-            d.iter()
-                .enumerate()
-                .map(|(i, dev)| row(i + 1, format!("{}  {}", dev.name, dev.ip))),
-        ),
+    lines.extend(
+        p.devices
+            .iter()
+            .enumerate()
+            .map(|(i, d)| row(i + 1, format!("{}  {}", d.name, d.ip))),
+    );
+    match &p.search {
+        Search::Running => lines.push(Line::raw("looking for devices…")),
+        Search::Failed(e) => lines.push(Line::styled(e.as_str(), Style::new().fg(Color::Red))),
+        Search::Done if p.devices.is_empty() => lines.push(Line::raw("no cast devices found")),
+        Search::Done => {}
     }
-    let area = f.area();
-    let width = 50.min(area.width);
-    let height = (lines.len() as u16 + 2).min(area.height);
-    let popup = Rect {
-        x: area.x + (area.width - width) / 2,
-        y: area.y + (area.height - height) / 2,
-        width,
-        height,
-    };
+    let popup = f.area().centered(
+        Constraint::Length(50),
+        Constraint::Length(lines.len() as u16 + 2),
+    );
     let block = Block::bordered().title(" Cast to — Esc to close ");
     let inner = block.inner(popup);
     f.render_widget(Clear, popup);
@@ -341,14 +334,10 @@ fn draw_help(f: &mut Frame) {
         1
     };
     let rows = groups.len().div_ceil(cols);
-    let width = (cols as u16 * 39 + 2).min(area.width);
-    let height = (rows as u16 + 2).min(area.height);
-    let popup = Rect {
-        x: area.x + (area.width - width) / 2,
-        y: area.y + (area.height - height) / 2,
-        width,
-        height,
-    };
+    let popup = area.centered(
+        Constraint::Length(cols as u16 * 39 + 2),
+        Constraint::Length(rows as u16 + 2),
+    );
     let block = Block::bordered().title(" Keys — ? to close ");
     let inner = block.inner(popup);
     let entries: Vec<String> = groups

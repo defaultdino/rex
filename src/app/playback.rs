@@ -112,17 +112,17 @@ impl Playback {
     }
 
     #[cfg(feature = "cast")]
-    pub fn replace_player(&mut self, player: SyncSender<PlayerCmd>) -> SyncSender<PlayerCmd> {
-        std::mem::replace(&mut self.player, player)
+    pub fn set_player(&mut self, player: SyncSender<PlayerCmd>) {
+        self.player = player;
     }
 
     #[cfg(feature = "cast")]
-    pub fn switch_player(&mut self, player: SyncSender<PlayerCmd>) -> SyncSender<PlayerCmd> {
+    pub fn switch_player(&mut self, player: SyncSender<PlayerCmd>) {
         self.send(PlayerCmd::Stop);
-        let old = self.replace_player(player);
+        self.player = player;
         self.send(PlayerCmd::SetVolume(self.now.volume));
         if self.now.track.is_none() || self.queue.current.is_none() {
-            return old;
+            return;
         }
         let playing = !self.now.paused && self.resume_ms.is_none();
         self.resume_ms = Some(self.resume_ms.unwrap_or(self.now.position_ms));
@@ -134,7 +134,6 @@ impl Playback {
         if playing {
             self.toggle_pause();
         }
-        old
     }
 
     /// one request per event so a worker sends them in order (e.g. stopped before playing)

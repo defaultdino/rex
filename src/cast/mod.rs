@@ -9,8 +9,8 @@ pub use discover::{Device, discover};
 
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::sync::mpsc::sync_channel;
-use std::thread::{self, JoinHandle};
+use std::sync::mpsc::{Receiver, channel as std_channel, sync_channel};
+use std::thread;
 
 use anyhow::{Context, Result, bail};
 use smol::block_on;
@@ -20,7 +20,7 @@ use crate::backend::Channels;
 use crate::plex::PlexClient;
 use caster::Caster;
 
-pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr, volume: f32) -> Result<(Channels, JoinHandle<()>)> {
+pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr, volume: f32) -> Result<(Channels, Receiver<()>)> {
     let server = plex.base();
     if loopback(&server) {
         bail!("rex reaches plex at {server}, which the device can't");
@@ -40,10 +40,12 @@ pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr, volume: f32) -> Result<(Channels
                 }
             }
         })?;
-    let cast = thread::Builder::new()
-        .name("cast".into())
-        .spawn(move || block_on(io::run(Caster::new(plex, ev_tx, volume), ip, first, fwd_rx)))?;
-    Ok(((cmd_tx, ev_rx), cast))
+    let (done_tx, done_rx) = std_channel::<()>();
+    thread::Builder::new().name("cast".into()).spawn(move || {
+        let _done = done_tx;
+        block_on(io::run(Caster::new(plex, ev_tx, volume), ip, first, fwd_rx))
+    })?;
+    Ok(((cmd_tx, ev_rx), done_rx))
 }
 
 fn loopback(url: &str) -> bool {

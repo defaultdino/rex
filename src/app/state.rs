@@ -16,8 +16,6 @@ use crate::backend::PlayerCmd;
 
 const MESSAGE_TTL: Duration = Duration::from_secs(5);
 const QUIT_CONFIRM: Duration = Duration::from_secs(3);
-#[cfg(feature = "cast")]
-const CAST_STOP_WAIT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -26,15 +24,12 @@ pub enum Focus {
 }
 
 /// overlay that takes all input until closed
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum Modal {
     Search(String),
     Help,
     #[cfg(feature = "cast")]
-    Cast {
-        devices: Option<Result<Vec<crate::cast::Device>, String>>,
-        selected: usize,
-    },
+    Cast(super::cast::Picker),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,13 +77,7 @@ pub struct AppState {
     pub quit: bool,
     pub backend: u64,
     #[cfg(feature = "cast")]
-    api: SyncSender<ApiRequest>,
-    #[cfg(feature = "cast")]
-    local_player: SyncSender<PlayerCmd>,
-    #[cfg(feature = "cast")]
-    cast: Option<std::thread::JoinHandle<()>>,
-    #[cfg(feature = "cast")]
-    cast_request: u64,
+    pub(super) cast: super::cast::CastState,
 }
 
 impl AppState {
@@ -97,19 +86,14 @@ impl AppState {
         player: SyncSender<PlayerCmd>,
         volume: f32,
         saved: Option<SavedQueue>,
+        #[cfg(feature = "cast")] cast: super::cast::CastState,
     ) -> Self {
         Self {
             screen: Screen::Browse(Focus::List),
             modal: None,
             browser: Browser::new(api.clone()),
             #[cfg(feature = "cast")]
-            api: api.clone(),
-            #[cfg(feature = "cast")]
-            local_player: player.clone(),
-            #[cfg(feature = "cast")]
-            cast: None,
-            #[cfg(feature = "cast")]
-            cast_request: 0,
+            cast,
             backend: 0,
             playback: Playback::new(api, player, volume, saved),
             quit_armed: None,
@@ -166,7 +150,7 @@ impl AppState {
             (Some(Modal::Search(_)), _) => &[SEARCH_INPUT_KEYS],
             (Some(Modal::Help), _) => &[HELP_KEYS],
             #[cfg(feature = "cast")]
-            (Some(Modal::Cast { .. }), _) => &[keys::CAST_KEYS],
+            (Some(Modal::Cast(_)), _) => &[keys::CAST_KEYS],
             (None, Screen::Player) => &[MAXIMIZED_PLAYER_KEYS, GLOBAL_PLAYER_KEYS],
             (None, Screen::Browse(Focus::Sidebar)) => &[NAV_KEYS, GLOBAL_PLAYER_KEYS],
             (None, Screen::Browse(Focus::List)) => match self.browser.view().map(|v| &v.kind) {
@@ -191,31 +175,13 @@ impl AppState {
             return;
         }
         // every key the help modal accepts closes it
-        if self.modal == Some(Modal::Help) {
+        if matches!(self.modal, Some(Modal::Help)) {
             self.modal = None;
             return;
         }
         #[cfg(feature = "cast")]
-        if let Some(Modal::Cast { devices, selected }) = &mut self.modal {
-            let found = devices.as_ref().and_then(|d| d.as_ref().ok());
-            let len = found.map_or(0, Vec::len);
-            match action {
-                Action::Down => *selected = (*selected + 1).min(len),
-                Action::Up => *selected = selected.saturating_sub(1),
-                Action::Open => {
-                    let device = selected.checked_sub(1).and_then(|i| found?.get(i));
-                    let target = device.map(|d| (d.name.clone(), d.ip));
-                    let local = *selected == 0;
-                    self.modal = None;
-                    match target {
-                        Some((name, ip)) => self.cast_to(name, ip),
-                        None if local => self.play_locally(),
-                        None => {}
-                    }
-                }
-                _ => self.modal = None,
-            }
-            return;
+        if matches!(self.modal, Some(Modal::Cast(_))) {
+            return self.on_cast_key(action);
         }
 
         let half = (self.browser.list_height / 2).max(1) as isize;
@@ -279,80 +245,7 @@ impl AppState {
             // routed through on_search_key while the search modal is open, never via lookup
             Action::SearchSubmit | Action::SearchCancel => {}
             #[cfg(feature = "cast")]
-            Action::Cast => {
-                if self.api.try_send(ApiRequest::Discover).is_err() {
-                    return self.error("can't look for cast devices, API queue full".into());
-                }
-                self.modal = Some(Modal::Cast {
-                    devices: None,
-                    selected: 0,
-                });
-            }
-        }
-    }
-
-    #[cfg(feature = "cast")]
-    pub fn on_devices(&mut self, result: Result<Vec<crate::cast::Device>, String>) {
-        if let Some(Modal::Cast { devices, selected }) = &mut self.modal {
-            *devices = Some(result);
-            *selected = 0;
-        }
-    }
-
-    #[cfg(feature = "cast")]
-    fn cast_to(&mut self, name: String, ip: std::net::IpAddr) {
-        self.cast_request += 1;
-        let req = ApiRequest::Cast {
-            id: self.cast_request,
-            volume: self.playback.now.volume,
-            name: name.clone(),
-            ip,
-        };
-        if self.api.try_send(req).is_err() {
-            return self.error("can't start casting, API queue full".into());
-        }
-        self.info(format!("connecting to {name}…"));
-    }
-
-    #[cfg(feature = "cast")]
-    pub fn on_cast(
-        &mut self,
-        id: u64,
-        name: String,
-        result: Result<(SyncSender<PlayerCmd>, std::thread::JoinHandle<()>), String>,
-    ) {
-        if id != self.cast_request {
-            return;
-        }
-        match result {
-            Ok((player, cast)) => {
-                drop(self.playback.switch_player(player));
-                self.cast = Some(cast);
-                self.backend = id;
-                self.info(format!("casting to {name}"));
-            }
-            Err(e) => self.error(format!("can't cast to {name}: {e}")),
-        }
-    }
-
-    #[cfg(feature = "cast")]
-    fn play_locally(&mut self) {
-        self.cast_request += 1;
-        if self.cast.take().is_none() {
-            return;
-        }
-        drop(self.playback.switch_player(self.local_player.clone()));
-        self.backend = 0;
-        self.info("playing on this computer".into());
-    }
-
-    #[cfg(feature = "cast")]
-    pub fn release_cast(&mut self) {
-        let Some(cast) = self.cast.take() else { return };
-        drop(self.playback.replace_player(self.local_player.clone()));
-        let deadline = Instant::now() + CAST_STOP_WAIT;
-        while !cast.is_finished() && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(20));
+            Action::Cast => self.open_cast_picker(),
         }
     }
 
