@@ -66,26 +66,36 @@ impl CastState {
 
 impl AppState {
     pub(super) fn open_cast_picker(&mut self) {
-        let events = self.cast.events.clone();
-        let spawned = thread::Builder::new()
-            .name("cast-discover".into())
-            .spawn(move || {
-                let send = |ev| events.send(AppEvent::Cast(ev)).is_ok();
-                let result = crate::cast::discover(DISCOVER_WAIT, |d| {
-                    send(CastEvent::Found(d));
+        if !self.static_cast_devices.is_empty() {
+            // static device definitions, no mDNS
+            self.modal = Some(Modal::Cast(Picker {
+                devices: self.static_cast_devices.clone(),
+                search: Search::Done,
+                selected: 0,
+            }))
+        } else {
+            let events = self.cast.events.clone();
+            let spawned = thread::Builder::new()
+                .name("cast-discover".into())
+                .spawn(move || {
+                    let send = |ev| events.send(AppEvent::Cast(ev)).is_ok();
+                    let result = crate::cast::discover(DISCOVER_WAIT, |d| {
+                        send(CastEvent::Found(d));
+                    });
+                    send(CastEvent::Searched(
+                        result.map_err(|e| format!("finding cast devices: {e}")),
+                    ));
                 });
-                send(CastEvent::Searched(
-                    result.map_err(|e| format!("finding cast devices: {e}")),
-                ));
-            });
-        if let Err(e) = spawned {
-            return self.error(format!("can't look for cast devices: {e}"));
+            if let Err(e) = spawned {
+                return self.error(format!("can't look for cast devices: {e}"));
+            }
+
+            self.modal = Some(Modal::Cast(Picker {
+                devices: Vec::new(),
+                search: Search::Running,
+                selected: 0,
+            }));
         }
-        self.modal = Some(Modal::Cast(Picker {
-            devices: Vec::new(),
-            search: Search::Running,
-            selected: 0,
-        }));
     }
 
     pub(super) fn on_cast_key(&mut self, action: Action) {

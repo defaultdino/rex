@@ -21,7 +21,7 @@ fn main() -> anyhow::Result<ExitCode> {
     let mut saved = config::SavedState::load(&cfg)?;
 
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting");
-    options.run(&cfg, &mut saved)
+    options.run(cfg, &mut saved)
 }
 
 pub fn fmt_ms(ms: u64) -> String {
