@@ -20,6 +20,8 @@ use tracing::warn;
 
 use crate::audio::player;
 use crate::backend::PlayerEvent;
+#[cfg(feature = "cast")]
+use crate::cast::Device;
 use crate::config::{self, SavedState};
 use crate::media_controls::{MediaControls, run_main_loop};
 use crate::plex::api::SearchResults;
@@ -105,7 +107,12 @@ pub enum AppEvent {
     Cast(cast::CastEvent),
 }
 
-pub fn run(client: Arc<PlexClient>, saved: &mut SavedState, accent: Option<&str>) -> Result<()> {
+pub fn run(
+    client: Arc<PlexClient>,
+    saved: &mut SavedState,
+    accent: Option<&str>,
+    #[cfg(feature = "cast")] static_cast_devices: Vec<Device>,
+) -> Result<()> {
     let section = saved
         .music_section
         .clone()
@@ -135,8 +142,11 @@ pub fn run(client: Arc<PlexClient>, saved: &mut SavedState, accent: Option<&str>
         saved.queue.take(),
         #[cfg(feature = "cast")]
         cast,
+        #[cfg(feature = "cast")]
+        static_cast_devices,
     );
     app.set_accent(accent);
+
     spawn_tui(rx, app, media_controls, &client, saved)
 }
 

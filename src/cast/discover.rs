@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use std::io::{self, ErrorKind};
 use std::net::{IpAddr, Ipv4Addr, UdpSocket};
 use std::time::{Duration, Instant};
@@ -9,7 +10,7 @@ const TXT: u16 = 16;
 const SRV: u16 = 33;
 const CAST_PORT: u16 = 8009;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Device {
     pub name: String,
     pub ip: IpAddr,

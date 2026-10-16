@@ -31,13 +31,18 @@ pub struct Options {
 }
 
 impl Options {
-    pub fn run(self, cfg: &Config, saved: &mut SavedState) -> anyhow::Result<ExitCode> {
+    pub fn run(self, cfg: Config, saved: &mut SavedState) -> anyhow::Result<ExitCode> {
         use Subcommand as S;
         match self.subcommand {
             Some(S::Login(c)) => c.run(saved),
             Some(S::Logout(c)) => c.run(saved),
             Some(S::Switch(c)) => c.run(saved),
-            None => self::tui::Options::default().run(saved, cfg.accent_color.as_deref()),
+            None => self::tui::Options::default().run(
+                saved,
+                cfg.accent_color.as_deref(),
+                #[cfg(feature = "cast")]
+                cfg.static_cast_devices.unwrap_or_default(),
+            ),
         }
     }
 }
