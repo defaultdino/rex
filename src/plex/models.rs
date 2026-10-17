@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+const LYRIC_STREAM_TYPE: u32 = 4;
+
 #[derive(Deserialize)]
 pub struct Container<T> {
     #[serde(rename = "MediaContainer")]
@@ -72,6 +74,24 @@ pub struct Playlist {
     pub duration_ms: Option<u64>,
 }
 
+#[derive(Debug)]
+pub struct TrackMetadata {
+    pub lyrics: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct Lyrics {
+    timed: bool,
+    provider: String,
+    lines: Vec<LyricLine>,
+}
+
+#[derive(Debug)]
+pub struct LyricLine {
+    offset: usize,
+    text: String,
+}
+
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub(super) struct RawItem {
@@ -104,6 +124,15 @@ struct RawMedia {
 #[serde(default)]
 struct RawPart {
     key: String,
+    #[serde(rename = "Stream")]
+    streams: Vec<RawStream>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct RawStream {
+    id: String,
+    stream_type: u32,
 }
 
 #[derive(Deserialize)]
@@ -113,6 +142,49 @@ pub(super) struct MetadataList {
     pub items: Vec<RawItem>,
     #[serde(default)]
     pub total_size: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct RawLyrics {
+    timed: bool,
+    provider: String,
+    #[serde(rename = "Line")]
+    lines: Vec<RawLine>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawLine {
+    span: Vec<RawSpan>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawSpan {
+    start_offset: usize,
+    text: String,
+}
+
+impl From<RawLyrics> for Lyrics {
+    fn from(r: RawLyrics) -> Self {
+        Self {
+            timed: r.timed,
+            provider: r.provider,
+            lines: r
+                .lines
+                .iter()
+                .filter_map(|l| {
+                    l.span.iter().next().map(|s| {
+                        return LyricLine {
+                            offset: s.start_offset,
+                            text: s.text.clone(),
+                        };
+                    })
+                })
+                .collect(),
+        }
+    }
 }
 
 impl From<RawItem> for Artist {
@@ -161,6 +233,29 @@ impl From<RawItem> for Track {
                 .unwrap_or_default(),
             container: media.container,
             audio_codec: media.audio_codec,
+        }
+    }
+}
+
+impl From<RawItem> for TrackMetadata {
+    fn from(r: RawItem) -> Self {
+        Self {
+            lyrics: r
+                .media
+                .into_iter()
+                .next()
+                .unwrap_or_default()
+                .parts
+                .into_iter()
+                .next()
+                .iter()
+                .flat_map(|p| {
+                    p.streams
+                        .iter()
+                        .filter(|s| s.stream_type == LYRIC_STREAM_TYPE)
+                        .map(|s| s.id.clone())
+                })
+                .collect(),
         }
     }
 }

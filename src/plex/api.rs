@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
+use crate::plex::models::{RawLyrics, TrackMetadata};
+
 use super::PlexClient;
 use super::models::{
     Album, Artist, Container, Directories, MetadataList, Page, Playlist, RawItem, Section, Track,
@@ -100,5 +102,12 @@ impl PlexClient {
                 tracks,
             })
         })
+    }
+
+    pub fn lyrics(&self, track: &str) -> Result<Vec<Lyrics>> {
+        let path = format!("/library/metadata/{track}");
+        let c: Container<MetadataList> = self.get(&path, &[])?;
+        let track_metadata: Option<TrackMetadata> =
+            c.mc.items.into_iter().map(TrackMetadata::from).next();
     }
 }
