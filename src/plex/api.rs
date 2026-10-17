@@ -109,5 +109,7 @@ impl PlexClient {
         let c: Container<MetadataList> = self.get(&path, &[])?;
         let track_metadata: Option<TrackMetadata> =
             c.mc.items.into_iter().map(TrackMetadata::from).next();
+
+        let path2 = format!("/library/streams/")
     }
 }
