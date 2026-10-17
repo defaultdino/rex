@@ -146,6 +146,12 @@ pub(super) struct MetadataList {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(super) struct RawLyricsContainer {
+    pub lyrics: Vec<RawLyrics>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct RawLyrics {
     timed: bool,
     provider: String,

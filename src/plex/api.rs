@@ -1,8 +1,9 @@
 use std::sync::Arc;
+use std::vec;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 
-use crate::plex::models::{RawLyrics, TrackMetadata};
+use crate::plex::models::{Lyrics, RawLyricsContainer, TrackMetadata};
 
 use super::PlexClient;
 use super::models::{
@@ -104,12 +105,24 @@ impl PlexClient {
         })
     }
 
-    pub fn lyrics(&self, track: &str) -> Result<Vec<Lyrics>> {
+    pub fn track_metadata(&self, track: &str) -> Result<Vec<String>> {
         let path = format!("/library/metadata/{track}");
         let c: Container<MetadataList> = self.get(&path, &[])?;
         let track_metadata: Option<TrackMetadata> =
             c.mc.items.into_iter().map(TrackMetadata::from).next();
 
-        let path2 = format!("/library/streams/")
+        return track_metadata
+            .map(|tm| Ok(tm.lyrics))
+            .unwrap_or_else(|| Ok(vec![]));
+    }
+
+    pub fn lyrics(&self, lyrics_id: &str) -> Result<Lyrics> {
+        let path = format!("/library/streams/{lyrics_id}");
+        let c: Container<RawLyricsContainer> = self.get(&path, &[])?;
+        c.mc.lyrics
+            .into_iter()
+            .map(Lyrics::from)
+            .next()
+            .ok_or(Error::msg("no lyrics found"))
     }
 }
