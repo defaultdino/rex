@@ -11,7 +11,6 @@ use super::queue::{Queue, SavedQueue};
 use super::reporting::{Report, Reporter};
 use super::state::Message;
 use super::{AddMode, ApiRequest, TrackSource};
-use crate::app::ApiRequest::AvailableLyrics;
 use crate::app::lyrics::Lyrics;
 use crate::backend::{PlayerCmd, PlayerEvent};
 use crate::plex::models::{Track, TrackLyrics};
