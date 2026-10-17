@@ -13,7 +13,7 @@ use super::state::Message;
 use super::{AddMode, ApiRequest, TrackSource};
 use crate::app::lyrics::Lyrics;
 use crate::backend::{PlayerCmd, PlayerEvent};
-use crate::plex::models::{Track, TrackLyrics};
+use crate::plex::models::{AvailableLyrics, Track, TrackLyrics};
 
 const ENQUEUE_BEFORE_END_MS: u64 = 10_000;
 const RESTART_AFTER_MS: u64 = 3_000;
@@ -498,7 +498,7 @@ impl Playback {
         self.stop();
     }
 
-    pub fn sync_cover(&mut self) {
+    fn sync_cover(&mut self) {
         let Some(t) = &self.now.track else { return };
         if t.thumb.is_empty() || self.cover.as_ref().is_some_and(|c| c.thumb == t.thumb) {
             return;
@@ -524,12 +524,12 @@ impl Playback {
         }
     }
 
-    pub fn sync_available_lyrics(&mut self) {
+    fn sync_available_lyrics(&mut self) {
         let Some(t) = &self.now.track else { return };
         if self.lyrics.is_available_for(&t.rating_key) {
             return;
         }
-        self.lyrics.set_track(&t.rating_key);
+        self.lyrics.set_loading_available(&t.rating_key);
         if self
             .api
             .try_send(ApiRequest::AvailableLyrics {
@@ -542,20 +542,46 @@ impl Playback {
         }
     }
 
-    pub fn on_available_lyrics(&mut self, rating_key: String, result: Result<Vec<String>, String>) {
-        if self.lyrics.track_key != Some(rating_key.clone()) {
+    pub fn on_available_lyrics(
+        &mut self,
+        rating_key: String,
+        result: Result<Vec<AvailableLyrics>, String>,
+    ) {
+        match result {
+            Ok(available_lyrics) => self.lyrics.set_available(&rating_key, available_lyrics),
+            Err(e) => warn!("available_lyrics: {e}"),
+        }
+    }
+
+    pub fn fetch_lyrics(&mut self, lyrics_id: String) {
+        if self.now.track.is_none() {
+            return;
+        };
+        if self.lyrics.is_loaded_for(&lyrics_id) {
             return;
         }
-        match result {
-            Ok(available_lyrics) => self.lyrics.set_available_for(&rating_key, available_lyrics),
-            Err(e) => warn!("available_lyrics: {e}"),
+        self.lyrics.set_loading_lyrics(&lyrics_id);
+        if self
+            .api
+            .try_send(ApiRequest::Lyrics {
+                lyrics_id: lyrics_id.clone(),
+            })
+            .is_err()
+        {
+            warn!("lyrics request dropped, API queue full");
+            self.lyrics.clear();
         }
     }
 
     pub fn on_lyrics(&mut self, lyrics_id: String, result: Result<TrackLyrics, String>) {
         match result {
-            Ok(lyrics) => self.lyrics.set_loaded_for(&lyrics_id, lyrics),
+            Ok(lyrics) => self.lyrics.set_lyrics(&lyrics_id, lyrics),
             Err(e) => warn!("available_lyrics: {e}"),
         }
+    }
+
+    pub fn sync_track_data(&mut self) {
+        self.sync_cover();
+        self.sync_available_lyrics();
     }
 }

@@ -24,7 +24,7 @@ use crate::backend::PlayerEvent;
 use crate::config::{self, SavedState};
 use crate::media_controls::{MediaControls, run_main_loop};
 use crate::plex::api::SearchResults;
-use crate::plex::models::{Album, Artist, Page, Playlist, Track, TrackLyrics};
+use crate::plex::models::{Album, Artist, AvailableLyrics, Page, Playlist, Track, TrackLyrics};
 use crate::plex::{PlexClient, auth};
 use browser::ListKind;
 use reporting::Report;
@@ -112,7 +112,7 @@ pub enum AppEvent {
     Cast(cast::CastEvent),
     AvailableLyrics {
         rating_key: String,
-        result: Result<Vec<String>, String>,
+        result: Result<Vec<AvailableLyrics>, String>,
     },
     Lyrics {
         lyrics_id: String,
@@ -241,8 +241,7 @@ fn event_loop(
         }
         state.expire_message();
         let playback = &mut state.playback;
-        playback.sync_cover();
-        playback.sync_available_lyrics();
+        playback.sync_track_data();
         if playback.media_controls_dirty {
             playback.media_controls_dirty = false;
             if let Some(m) = media_controls.as_deref_mut() {

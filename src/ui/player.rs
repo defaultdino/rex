@@ -149,13 +149,6 @@ fn info_lines(s: &AppState, width: usize) -> Vec<Line<'static>> {
         .filter(|p| !p.is_empty())
         .collect();
 
-    let available = s
-        .playback
-        .lyrics
-        .get_available(&track.rating_key)
-        .unwrap_or(&vec!["NO LYRICS".to_string()])
-        .join(", ");
-
     vec![
         Line::styled(
             fit(
@@ -167,7 +160,6 @@ fn info_lines(s: &AppState, width: usize) -> Vec<Line<'static>> {
         ),
         Line::raw(truncate(&artist_album.join(" — "), width)),
         progress_line(now, track, width, s.accent),
-        Line::raw(available),
         status_line(s),
     ]
 }

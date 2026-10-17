@@ -75,8 +75,15 @@ pub struct Playlist {
 }
 
 #[derive(Debug)]
+pub struct AvailableLyrics {
+    pub id: String,
+    pub format: String,
+    pub timed: bool,
+}
+
+#[derive(Debug)]
 pub struct TrackMetadata {
-    pub lyrics: Vec<String>,
+    pub lyrics: Vec<AvailableLyrics>,
 }
 
 #[derive(Debug)]
@@ -133,6 +140,8 @@ struct RawPart {
 struct RawStream {
     id: u32,
     stream_type: u32,
+    format: Option<String>,
+    timed: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -259,7 +268,11 @@ impl From<RawItem> for TrackMetadata {
                     p.streams
                         .iter()
                         .filter(|s| s.stream_type == LYRIC_STREAM_TYPE)
-                        .map(|s| s.id.to_string().clone())
+                        .map(|s| AvailableLyrics {
+                            id: s.id.to_string(),
+                            format: s.format.clone().unwrap_or_default(),
+                            timed: s.timed.clone().map(|t| t == "1").unwrap_or_default(),
+                        })
                 })
                 .collect(),
         }
