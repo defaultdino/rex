@@ -80,7 +80,7 @@ pub struct TrackMetadata {
 }
 
 #[derive(Debug)]
-pub struct Lyrics {
+pub struct TrackLyrics {
     timed: bool,
     provider: String,
     lines: Vec<LyricLine>,
@@ -131,7 +131,7 @@ struct RawPart {
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 struct RawStream {
-    id: String,
+    id: u32,
     stream_type: u32,
 }
 
@@ -172,7 +172,7 @@ struct RawSpan {
     text: String,
 }
 
-impl From<RawLyrics> for Lyrics {
+impl From<RawLyrics> for TrackLyrics {
     fn from(r: RawLyrics) -> Self {
         Self {
             timed: r.timed,
@@ -259,7 +259,7 @@ impl From<RawItem> for TrackMetadata {
                     p.streams
                         .iter()
                         .filter(|s| s.stream_type == LYRIC_STREAM_TYPE)
-                        .map(|s| s.id.clone())
+                        .map(|s| s.id.to_string().clone())
                 })
                 .collect(),
         }

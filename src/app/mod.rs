@@ -2,6 +2,7 @@ pub mod browser;
 #[cfg(feature = "cast")]
 pub mod cast;
 pub mod keys;
+pub mod lyrics;
 pub mod now_playing;
 mod playback;
 pub mod queue;
@@ -23,7 +24,7 @@ use crate::backend::PlayerEvent;
 use crate::config::{self, SavedState};
 use crate::media_controls::{MediaControls, run_main_loop};
 use crate::plex::api::SearchResults;
-use crate::plex::models::{Album, Artist, Page, Playlist, Track};
+use crate::plex::models::{Album, Artist, Page, Playlist, Track, TrackLyrics};
 use crate::plex::{PlexClient, auth};
 use browser::ListKind;
 use reporting::Report;
@@ -67,6 +68,12 @@ pub enum ApiRequest {
     Cover {
         thumb: String,
     },
+    AvailableLyrics {
+        rating_key: String,
+    },
+    Lyrics {
+        lyrics_id: String,
+    },
 }
 
 pub enum PageData {
@@ -103,6 +110,14 @@ pub enum AppEvent {
     Reconnected(String),
     #[cfg(feature = "cast")]
     Cast(cast::CastEvent),
+    AvailableLyrics {
+        rating_key: String,
+        result: Result<Vec<String>, String>,
+    },
+    Lyrics {
+        lyrics_id: String,
+        result: Result<TrackLyrics, String>,
+    },
 }
 
 pub fn run(client: Arc<PlexClient>, saved: &mut SavedState, accent: Option<&str>) -> Result<()> {
@@ -227,6 +242,7 @@ fn event_loop(
         state.expire_message();
         let playback = &mut state.playback;
         playback.sync_cover();
+        playback.sync_available_lyrics();
         if playback.media_controls_dirty {
             playback.media_controls_dirty = false;
             if let Some(m) = media_controls.as_deref_mut() {
@@ -263,6 +279,10 @@ fn handle(state: &mut AppState, ev: AppEvent) {
             }
         }
         AppEvent::Cover { thumb, result } => state.playback.on_cover(thumb, result),
+        AppEvent::AvailableLyrics { rating_key, result } => {
+            state.playback.on_available_lyrics(rating_key, result)
+        }
+        AppEvent::Lyrics { lyrics_id, result } => state.playback.on_lyrics(lyrics_id, result),
         AppEvent::Player(id, ev) if id == state.backend => state.playback.on_player(ev),
         AppEvent::Player(..) => {}
         AppEvent::MediaControl(MediaControlEvent::Quit) | AppEvent::Signal => state.quit = true,
@@ -432,6 +452,14 @@ impl ApiContext {
             ApiRequest::Cover { thumb } => AppEvent::Cover {
                 result: self.call(|| fetch_cover(c, &thumb)).map_err(err),
                 thumb,
+            },
+            ApiRequest::AvailableLyrics { rating_key } => AppEvent::AvailableLyrics {
+                rating_key: rating_key.clone(),
+                result: self.call(|| c.available_lyrics(&rating_key)).map_err(err),
+            },
+            ApiRequest::Lyrics { lyrics_id } => AppEvent::Lyrics {
+                lyrics_id: lyrics_id.clone(),
+                result: self.call(|| c.lyrics(&lyrics_id)).map_err(err),
             },
         })
     }

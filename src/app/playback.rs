@@ -11,8 +11,10 @@ use super::queue::{Queue, SavedQueue};
 use super::reporting::{Report, Reporter};
 use super::state::Message;
 use super::{AddMode, ApiRequest, TrackSource};
+use crate::app::ApiRequest::AvailableLyrics;
+use crate::app::lyrics::Lyrics;
 use crate::backend::{PlayerCmd, PlayerEvent};
-use crate::plex::models::Track;
+use crate::plex::models::{Track, TrackLyrics};
 
 const ENQUEUE_BEFORE_END_MS: u64 = 10_000;
 const RESTART_AFTER_MS: u64 = 3_000;
@@ -32,6 +34,7 @@ pub struct Playback {
     pub queue: Queue,
     pub now: NowPlaying,
     pub cover: Option<Cover>,
+    pub lyrics: Lyrics,
     loading: Option<(u64, String)>,
     enqueued: Option<(u64, String)>,
     failures: usize,
@@ -70,6 +73,7 @@ impl Playback {
             reporter: Reporter::default(),
             media_controls_dirty: false,
             notice: None,
+            lyrics: Lyrics::default(),
         };
 
         if let Some(saved) = saved {
@@ -518,6 +522,41 @@ impl Playback {
         match result {
             Ok(img) => c.art = Some(img),
             Err(e) => warn!("cover art: {e}"),
+        }
+    }
+
+    pub fn sync_available_lyrics(&mut self) {
+        let Some(t) = &self.now.track else { return };
+        if self.lyrics.is_available_for(&t.rating_key) {
+            return;
+        }
+        self.lyrics.set_track(&t.rating_key);
+        if self
+            .api
+            .try_send(ApiRequest::AvailableLyrics {
+                rating_key: t.rating_key.clone(),
+            })
+            .is_err()
+        {
+            warn!("track lyrics request dropped, API queue full");
+            self.lyrics.clear();
+        }
+    }
+
+    pub fn on_available_lyrics(&mut self, rating_key: String, result: Result<Vec<String>, String>) {
+        if self.lyrics.track_key != Some(rating_key.clone()) {
+            return;
+        }
+        match result {
+            Ok(available_lyrics) => self.lyrics.set_available_for(&rating_key, available_lyrics),
+            Err(e) => warn!("available_lyrics: {e}"),
+        }
+    }
+
+    pub fn on_lyrics(&mut self, lyrics_id: String, result: Result<TrackLyrics, String>) {
+        match result {
+            Ok(lyrics) => self.lyrics.set_loaded_for(&lyrics_id, lyrics),
+            Err(e) => warn!("available_lyrics: {e}"),
         }
     }
 }

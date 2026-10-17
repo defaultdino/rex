@@ -3,7 +3,7 @@ use std::vec;
 
 use anyhow::{Error, Result};
 
-use crate::plex::models::{Lyrics, RawLyricsContainer, TrackMetadata};
+use crate::plex::models::{RawLyricsContainer, TrackLyrics, TrackMetadata};
 
 use super::PlexClient;
 use super::models::{
@@ -105,7 +105,7 @@ impl PlexClient {
         })
     }
 
-    pub fn track_metadata(&self, track: &str) -> Result<Vec<String>> {
+    pub fn available_lyrics(&self, track: &str) -> Result<Vec<String>> {
         let path = format!("/library/metadata/{track}");
         let c: Container<MetadataList> = self.get(&path, &[])?;
         let track_metadata: Option<TrackMetadata> =
@@ -116,12 +116,12 @@ impl PlexClient {
             .unwrap_or_else(|| Ok(vec![]));
     }
 
-    pub fn lyrics(&self, lyrics_id: &str) -> Result<Lyrics> {
+    pub fn lyrics(&self, lyrics_id: &str) -> Result<TrackLyrics> {
         let path = format!("/library/streams/{lyrics_id}");
         let c: Container<RawLyricsContainer> = self.get(&path, &[])?;
         c.mc.lyrics
             .into_iter()
-            .map(Lyrics::from)
+            .map(TrackLyrics::from)
             .next()
             .ok_or(Error::msg("no lyrics found"))
     }
