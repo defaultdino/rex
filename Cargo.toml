@@ -1,6 +1,6 @@
 [package]
 name = "rex"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2024"
 homepage = "https://adisveletanlic.blabb.dev/projects/rex/"
 description = "A TUI Plex media player written in Rust"
@@ -10,6 +10,14 @@ authors = ["Adis Veletanlic <adisveletanlic@proton.me>"]
 [package.metadata.generate-rpm]
 assets = [
   { source = "target/release/rex", dest = "/usr/bin/rex", mode = "755" },
+  { source = "doc/rex.1", dest = "/usr/share/man/man1/rex.1", mode = "644", doc = true },
+]
+
+[package.metadata.deb]
+assets = [
+  ["target/release/rex", "usr/bin/", "755"],
+  ["README.md", "usr/share/doc/rex/README", "644"],
+  ["doc/rex.1", "usr/share/man/man1/", "644"],
 ]
 
 [dependencies]

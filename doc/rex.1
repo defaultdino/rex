@@ -1,0 +1,280 @@
+.TH REX 1 2026-10-20 "rex 2.0.0" "User Commands"
+.SH NAME
+rex \- terminal music player for Plex Media Server
+.SH SYNOPSIS
+.B rex
+.RB [ \-\-log\-level
+.IR level ]
+.br
+.B rex login
+.br
+.B rex logout
+.br
+.B rex switch
+.RI [ library ]
+.br
+.B rex
+.BR \-\-version " | " \-\-help
+.SH DESCRIPTION
+.B rex
+plays the music library on your Plex Media Server from the terminal.
+Run without a subcommand, it opens the player.
+On first run it signs in to Plex and asks which server and music library to use.
+.PP
+The queue and volume are saved between sessions.
+When D\-Bus (Linux) or Control Center (macOS) is available,
+.B rex
+also responds to media keys and system media controls.
+.SH COMMANDS
+.TP
+.B login
+Sign in to Plex and choose a server and music library.
+.B rex
+prints a URL; open it in a browser and sign in.
+It waits up to five minutes for the sign\-in to finish.
+Signing in forgets the previously chosen server and library.
+.TP
+.B logout
+Forget the saved Plex tokens.
+.TP
+.BR switch " [\fIlibrary\fR]"
+Choose another music library from any reachable server on the account.
+Without an argument, lists the libraries and asks which to use.
+With
+.IR library ,
+a 1\-based index into that list, picks it directly.
+Switching library clears the saved queue.
+.SH OPTIONS
+.TP
+.BI \-\-log\-level " level"
+Log verbosity: one of
+.BR trace ", " debug ", " info ", " warn ", " error .
+Defaults to
+.BR info .
+See
+.BR FILES .
+.TP
+.BR \-V ", " \-\-version
+Print the version and exit.
+.TP
+.BR \-h ", " \-\-help
+Print help and exit.
+.SH INTERFACE
+The window has a sidebar of sections, a list of the selected section,
+and a player.
+.B Tab
+moves focus between the sidebar and the list.
+The bottom line shows the keys available in the current view.
+Press
+.B ?
+for the full list of keybindings.
+.PP
+The sections are
+.BR Artists ", " Albums ", " Playlists ", " Search " and " Queue .
+.SH KEYS
+.SS Navigation
+.TP 18
+.BR j ", " Down
+Move down.
+.TP
+.BR k ", " Up
+Move up.
+.TP
+.BR g ", " Home
+Go to the top.
+.TP
+.BR G ", " End
+Go to the bottom.
+.TP
+.BR Ctrl\-d ", " PgDn
+Half page down.
+.TP
+.BR Ctrl\-u ", " PgUp
+Half page up.
+.TP
+.BR l ", " Right ", " Enter
+Open the selected item.
+.TP
+.BR h ", " Left ", " Backspace ", " Esc
+Go back.
+.TP
+.B Tab
+Toggle focus between sidebar and list.
+.TP
+.BR 1 \(en 5
+Jump to Artists, Albums, Playlists, Search or Queue.
+.TP
+.B /
+Search.
+In the search field,
+.B Enter
+searches and
+.B Esc
+cancels.
+.SS Lists
+.TP 18
+.B P
+Play now, replacing the queue.
+.TP
+.B S
+Play shuffled, replacing the queue.
+.TP
+.B a
+Add to the end of the queue.
+.TP
+.B n
+Play next.
+.SS Queue
+.TP 18
+.B d
+Remove the selected track.
+.TP
+.B D
+Clear the queue.
+.TP
+.B J
+Move the selected track down.
+.TP
+.B K
+Move the selected track up.
+.SS Player
+These work from any view.
+.TP 18
+.B Space
+Play or pause.
+.TP
+.B >
+Next track.
+.TP
+.B <
+Previous track, or restart the current one.
+.TP
+.B .
+Seek forward 10 seconds.
+.TP
+.B ,
+Seek back 10 seconds.
+.TP
+.B +
+Volume up.
+.TP
+.B \-
+Volume down.
+.TP
+.B s
+Toggle shuffle.
+.TP
+.B r
+Cycle repeat: off, all, one.
+.TP
+.B m
+Toggle the player between maximized and minimized.
+.TP
+.B c
+Cast to a device.
+Only in builds with the
+.B cast
+feature.
+.TP
+.B ?
+Show help.
+.TP
+.B F12
+Show memory usage.
+.TP
+.B q
+Quit.
+.SH CASTING
+Builds with the
+.B cast
+feature can play to Google Cast devices.
+Press
+.B c
+to pick a device; while casting, the volume keys control the device's own volume.
+Devices are found with mDNS, unless
+.B static_cast_devices
+is set in the configuration file, in which case only those devices are offered.
+.SH CONFIGURATION
+.B rex
+reads
+.IR $XDG_CONFIG_HOME/rex/config.toml ,
+by default
+.IR ~/.config/rex/config.toml .
+The file and every key in it are optional.
+.TP
+.B accent_color
+Color for focus, selection and highlights.
+A color name such as
+.B cyan
+or
+.BR light\-blue ,
+a 256\-color index such as
+.BR 208 ,
+or a hex color such as
+.BR #ff8800 .
+Defaults to
+.BR cyan .
+.TP
+.B static_cast_devices
+An array of tables with
+.B name
+and
+.B ip
+keys.
+When set, these devices are offered for casting instead of discovering devices with mDNS.
+.PP
+Example:
+.PP
+.RS
+.nf
+accent_color = "cyan"
+
+[[static_cast_devices]]
+name = "Living Room TV"
+ip = "192.168.1.20"
+.fi
+.RE
+.SH FILES
+.TP
+.I ~/.config/rex/config.toml
+Configuration, see
+.BR CONFIGURATION .
+.TP
+.I ~/.local/state/rex/state.json
+Saved state: Plex tokens, chosen server and library, volume and queue.
+Written with mode 0600.
+Versions 1.5 and earlier kept the login and server keys in
+.IR config.toml ;
+.B rex
+copies them here on first start, after which they can be removed from
+.IR config.toml .
+.TP
+.I ~/.local/state/rex/rex.YYYY\-MM\-DD.log
+Log files, rotated daily; the last three are kept.
+.PP
+On macOS these files live in
+.IR ~/Library/Application\ Support/rex/ .
+.SH EXIT STATUS
+0 on success, non\-zero on error.
+.SH EXAMPLES
+Sign in and open the player:
+.PP
+.RS
+.B rex
+.RE
+.PP
+Use the second music library without being asked:
+.PP
+.RS
+.B rex switch 2
+.RE
+.PP
+Run with verbose logging:
+.PP
+.RS
+.B rex \-\-log\-level debug
+.RE
+.SH AUTHOR
+Adis Veletanlic <adisveletanlic@proton.me>
+.SH SEE ALSO
+https://adisveletanlic.blabb.dev/projects/rex/

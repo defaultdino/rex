@@ -80,6 +80,7 @@ jobs:
           mkdir -p "$DIR"
           cp "target/${{ matrix.target }}/release/${BIN_NAME}" "$DIR/"
           cp README* LICENSE* "$DIR/" 2>/dev/null || true
+          cp doc/rex.1 "$DIR/"
           tar czf "$DIR.tar.gz" "$DIR"
 
       - name: Collect packages
