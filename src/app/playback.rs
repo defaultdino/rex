@@ -355,7 +355,6 @@ impl Playback {
                     self.seek_to(ms);
                 }
                 self.sync_next();
-                self.sync_track_data();
             }
             PlayerEvent::TrackEnded => {
                 let reports = self.reporter.ended();
