@@ -78,7 +78,6 @@ pub struct Playlist {
 pub struct AvailableLyrics {
     pub id: String,
     pub format: String,
-    pub timed: bool,
 }
 
 #[derive(Debug)]
@@ -89,7 +88,6 @@ pub struct TrackMetadata {
 #[derive(Debug)]
 pub struct TrackLyrics {
     pub timed: bool,
-    pub provider: String,
     pub lines: Vec<LyricLine>,
 }
 
@@ -164,7 +162,6 @@ pub(super) struct RawLyricsContainer {
 #[serde(rename_all = "camelCase")]
 pub(super) struct RawLyrics {
     timed: bool,
-    provider: String,
     #[serde(rename = "Line")]
     lines: Vec<RawLine>,
 }
@@ -187,7 +184,6 @@ impl From<RawLyrics> for TrackLyrics {
     fn from(r: RawLyrics) -> Self {
         Self {
             timed: r.timed,
-            provider: r.provider,
             lines: r
                 .lines
                 .iter()
@@ -273,7 +269,6 @@ impl From<RawItem> for TrackMetadata {
                         .map(|s| AvailableLyrics {
                             id: s.id.to_string(),
                             format: s.format.clone().unwrap_or_default(),
-                            timed: s.timed.clone().map(|t| t == "1").unwrap_or_default(),
                         })
                 })
                 .collect(),
