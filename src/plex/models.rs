@@ -188,9 +188,15 @@ impl From<RawLyrics> for TrackLyrics {
                 .lines
                 .iter()
                 .filter_map(|l| {
-                    l.span.iter().flatten().next().map(|s| LyricLine {
-                        offset: l.start_offset.unwrap_or(0),
-                        text: s.text.clone(),
+                    let offset = if r.timed {
+                        l.start_offset?
+                    } else {
+                        l.start_offset.unwrap_or(0)
+                    };
+                    let span = l.span.iter().flatten().next()?;
+                    Some(LyricLine {
+                        offset,
+                        text: span.text.clone(),
                     })
                 })
                 .collect(),
