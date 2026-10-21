@@ -184,6 +184,10 @@ fn lyrics(s: &AppState) -> Vec<Line<'static>> {
     match &s.playback.lyrics.lyrics {
         Remote::Idle => vec![Line::styled("No lyrics found", Modifier::DIM)],
         Remote::Loading => vec![Line::styled("Loading lyrics…", Modifier::DIM)],
+        Remote::Failed(e) => vec![Line::styled(
+            format!("Couldn't load lyrics: {e}"),
+            Modifier::DIM,
+        )],
         Remote::Loaded(lyrics) => match lyrics.timed {
             true => timed_lyrics(s, lyrics),
             false => lyrics

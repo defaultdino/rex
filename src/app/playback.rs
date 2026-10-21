@@ -539,7 +539,8 @@ impl Playback {
             .is_err()
         {
             warn!("track lyrics request dropped, API queue full");
-            self.lyrics.clear();
+            self.lyrics
+                .set_available_failed(&t.rating_key, "API queue full".into());
         }
     }
 
@@ -551,12 +552,15 @@ impl Playback {
         match result {
             Ok(available_lyrics) => {
                 self.lyrics.set_available(&rating_key, available_lyrics);
-                if let Some(best) = self.lyrics.best_available() {
-                    let lyrics_id = best.id.clone();
+                let best = self.lyrics.next_lyrics_after(None);
+                if let Some(lyrics_id) = best {
                     self.fetch_lyrics(lyrics_id);
                 }
             }
-            Err(e) => warn!("available_lyrics: {e}"),
+            Err(e) => {
+                warn!("available_lyrics: {e}");
+                self.lyrics.set_available_failed(&rating_key, e);
+            }
         }
     }
 
@@ -576,14 +580,21 @@ impl Playback {
             .is_err()
         {
             warn!("lyrics request dropped, API queue full");
-            self.lyrics.clear();
+            self.lyrics
+                .set_lyrics_failed(&lyrics_id, "API queue full".into());
         }
     }
 
     pub fn on_lyrics(&mut self, lyrics_id: String, result: Result<TrackLyrics, String>) {
         match result {
             Ok(lyrics) => self.lyrics.set_lyrics(&lyrics_id, lyrics),
-            Err(e) => warn!("lyrics: {e}"),
+            Err(e) => {
+                warn!("lyrics: {e}");
+                match self.lyrics.next_lyrics_after(Some(&lyrics_id)) {
+                    Some(next) => self.fetch_lyrics(next),
+                    None => self.lyrics.set_lyrics_failed(&lyrics_id, e),
+                }
+            }
         }
     }
 

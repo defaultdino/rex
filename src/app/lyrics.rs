@@ -1,9 +1,12 @@
+use std::cmp::Reverse;
+
 use crate::plex::models::{AvailableLyrics, TrackLyrics};
 
 pub enum Remote<T> {
     Idle,
     Loading,
     Loaded(T),
+    Failed(String),
 }
 
 pub struct Lyrics {
@@ -25,10 +28,6 @@ impl Default for Lyrics {
 }
 
 impl Lyrics {
-    pub fn clear(&mut self) -> Lyrics {
-        Lyrics::default()
-    }
-
     pub fn set_loading_available(&mut self, track_key: &str) {
         self.track_key = Some(track_key.into());
         self.available = Remote::Loading;
@@ -47,12 +46,29 @@ impl Lyrics {
         self.available = Remote::Loaded(available);
     }
 
+    pub fn set_available_failed(&mut self, track_key: &str, error: String) {
+        if self.track_key != Some(track_key.into()) {
+            return;
+        }
+
+        self.available = Remote::Failed(error.clone());
+        self.lyrics = Remote::Failed(error);
+    }
+
     pub fn set_lyrics(&mut self, lyric_id: &str, lyrics: TrackLyrics) {
         if self.lyric_id != Some(lyric_id.into()) {
             return;
         }
 
         self.lyrics = Remote::Loaded(lyrics);
+    }
+
+    pub fn set_lyrics_failed(&mut self, lyric_id: &str, error: String) {
+        if self.lyric_id != Some(lyric_id.into()) {
+            return;
+        }
+
+        self.lyrics = Remote::Failed(error);
     }
 
     pub fn is_available_for(&self, track_key: &str) -> bool {
@@ -63,15 +79,31 @@ impl Lyrics {
         self.lyric_id == Some(lyrics_id.into()) && matches!(self.lyrics, Remote::Loaded(_))
     }
 
-    pub fn best_available(&self) -> Option<&AvailableLyrics> {
+    pub fn best_available(&self) -> Vec<&AvailableLyrics> {
         let Remote::Loaded(als) = &self.available else {
-            return None;
+            return Vec::new();
         };
 
-        als.iter().max_by_key(|al| score_available_lyrics(al))
+        let mut ranked: Vec<_> = als.iter().collect();
+        ranked.sort_by_key(|al| Reverse(score_available_lyrics(al)));
+        ranked
+    }
+
+    pub fn next_lyrics_after(&self, lyric_id: Option<&str>) -> Option<String> {
+        let Some(id) = lyric_id else {
+            return self.best_available().get(0).map(|al| al.id.clone());
+        };
+
+        if self.lyric_id.as_deref() != lyric_id {
+            return None;
+        }
+
+        let ranked = self.best_available();
+        let index = ranked.iter().position(|al| al.id == id)?;
+        ranked.get(index + 1).map(|al| al.id.clone())
     }
 }
 
 fn score_available_lyrics(lyrics: &AvailableLyrics) -> usize {
-    usize::from(lyrics.timed) + usize::from(lyrics.format == "lrc")
+    usize::from(lyrics.format == "lrc")
 }
