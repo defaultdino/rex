@@ -2,7 +2,7 @@ use image::RgbImage;
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::terminal::window_size;
-use ratatui::layout::{Margin, Rect};
+use ratatui::layout::{Constraint, Flex, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Widget};
@@ -43,33 +43,45 @@ pub fn draw_maximized_player(f: &mut Frame, s: &AppState, area: Rect) {
         return;
     };
 
-    let mut info = inner;
-    let mut header = INFO_LINES;
-
-    if !track.thumb.is_empty() {
+    let cover = if track.thumb.is_empty() {
+        None
+    } else {
         let ratio = cell_ratio();
         let rows = (inner.height / 2)
             .min(16)
             .min((f32::from(inner.width / 3) / ratio) as u16);
         let cols = (f32::from(rows) * ratio).round() as u16;
-        if rows >= 4 {
-            if let Some(art) = cover_art(s, track) {
-                f.render_widget(CoverArt(art), Rect::new(inner.x, inner.y, cols, rows));
-            }
-            info.x += cols + 2;
-            info.width = info.width.saturating_sub(cols + 2);
-            header = header.max(rows);
-        }
-    }
+        (rows >= 4).then_some((cols, rows))
+    };
 
-    info.y += (header - INFO_LINES) / 2;
-    info.height = INFO_LINES.min(inner.height);
+    let [header, _, list] = Layout::vertical([
+        Constraint::Length(cover.map_or(INFO_LINES, |(_, rows)| rows.max(INFO_LINES))),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .areas(inner);
+
+    let info = match cover {
+        Some((cols, _)) => {
+            let [art_area, _, info] = Layout::horizontal([
+                Constraint::Length(cols),
+                Constraint::Length(2),
+                Constraint::Fill(1),
+            ])
+            .areas(header);
+            if let Some(art) = cover_art(s, track) {
+                f.render_widget(CoverArt(art), art_area);
+            }
+            info
+        }
+        None => header,
+    };
+    let [info] = Layout::vertical([Constraint::Length(INFO_LINES)])
+        .flex(Flex::Center)
+        .areas(info);
     f.render_widget(Paragraph::new(info_lines(s, info.width as usize)), info);
 
     let queue = &s.playback.queue;
-    let mut list = inner;
-    list.y += header + 1;
-    list.height = list.height.saturating_sub(header + 1);
     let width = list.width as usize;
     let next = queue.current.map_or(0, |i| i + 1);
 
@@ -161,13 +173,13 @@ fn info_lines(s: &AppState, width: usize) -> Vec<Line<'static>> {
         ),
         Line::raw(truncate(&artist_album.join(" — "), width)),
         progress_line(now, track, width, s.accent),
-        lyrics(s),
         status_line(s),
     ]
 }
 
-fn lyrics(s: &AppState) -> Line<'static> {
-    let lyric_string = match &s.playback.lyrics.lyrics {
+fn lyrics(s: &AppState) -> Vec<Line<'static>> {
+    let current_offset = s.playback.now.position_ms;
+    let lyric_strings = match &s.playback.lyrics.lyrics {
         Remote::Idle => "not loading".to_string(),
         Remote::Loading => "Loading lyrics...".to_string(),
         Remote::Loaded(lyrics) => lyrics
@@ -176,7 +188,7 @@ fn lyrics(s: &AppState) -> Line<'static> {
             .map_or("ERROR".to_string(), |lyric_line| lyric_line.text.clone()),
     };
 
-    Line::raw(lyric_string)
+    vec![]
 }
 
 fn progress_line(now: &NowPlaying, track: &Track, width: usize, accent: Color) -> Line<'static> {
