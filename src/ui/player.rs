@@ -210,7 +210,7 @@ fn timed_lyrics(s: &AppState, lyrics: &TrackLyrics) -> Vec<Line<'static>> {
         .skip(top)
         .map(|(i, l)| {
             if Some(i) == active {
-                Line::styled(l.text.clone(), Modifier::BOLD)
+                Line::styled(l.text.clone(), s.accent)
             } else if Some(i) < active {
                 Line::styled(l.text.clone(), Modifier::DIM)
             } else {

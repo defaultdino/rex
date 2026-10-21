@@ -44,6 +44,7 @@ impl Lyrics {
         }
 
         self.available = Remote::Loaded(available);
+        self.lyrics = Remote::Idle;
     }
 
     pub fn set_available_failed(&mut self, track_key: &str) {
