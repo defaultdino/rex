@@ -169,6 +169,7 @@ pub(super) struct RawLyrics {
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 struct RawLine {
+    start_offset: Option<usize>,
     #[serde(rename = "Span")]
     span: Vec<Option<RawSpan>>,
 }
@@ -176,7 +177,6 @@ struct RawLine {
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 struct RawSpan {
-    start_offset: usize,
     text: String,
 }
 
@@ -189,7 +189,7 @@ impl From<RawLyrics> for TrackLyrics {
                 .iter()
                 .filter_map(|l| {
                     l.span.iter().flatten().next().map(|s| LyricLine {
-                        offset: s.start_offset,
+                        offset: l.start_offset.unwrap_or(0),
                         text: s.text.clone(),
                     })
                 })
