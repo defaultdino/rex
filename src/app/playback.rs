@@ -539,8 +539,7 @@ impl Playback {
             .is_err()
         {
             warn!("track lyrics request dropped, API queue full");
-            self.lyrics
-                .set_available_failed(&t.rating_key, "API queue full".into());
+            self.lyrics.set_available_failed(&t.rating_key);
         }
     }
 
@@ -559,7 +558,7 @@ impl Playback {
             }
             Err(e) => {
                 warn!("available_lyrics: {e}");
-                self.lyrics.set_available_failed(&rating_key, e);
+                self.lyrics.set_available_failed(&rating_key);
             }
         }
     }
@@ -580,8 +579,7 @@ impl Playback {
             .is_err()
         {
             warn!("lyrics request dropped, API queue full");
-            self.lyrics
-                .set_lyrics_failed(&lyrics_id, "API queue full".into());
+            self.lyrics.set_lyrics_failed(&lyrics_id);
         }
     }
 
@@ -592,7 +590,7 @@ impl Playback {
                 warn!("lyrics: {e}");
                 match self.lyrics.next_lyrics_after(Some(&lyrics_id)) {
                     Some(next) => self.fetch_lyrics(next),
-                    None => self.lyrics.set_lyrics_failed(&lyrics_id, e),
+                    None => self.lyrics.set_lyrics_failed(&lyrics_id),
                 }
             }
         }

@@ -6,7 +6,7 @@ pub enum Remote<T> {
     Idle,
     Loading,
     Loaded(T),
-    Failed(String),
+    Failed,
 }
 
 pub struct Lyrics {
@@ -46,13 +46,13 @@ impl Lyrics {
         self.available = Remote::Loaded(available);
     }
 
-    pub fn set_available_failed(&mut self, track_key: &str, error: String) {
+    pub fn set_available_failed(&mut self, track_key: &str) {
         if self.track_key != Some(track_key.into()) {
             return;
         }
 
-        self.available = Remote::Failed(error.clone());
-        self.lyrics = Remote::Failed(error);
+        self.available = Remote::Failed;
+        self.lyrics = Remote::Failed;
     }
 
     pub fn set_lyrics(&mut self, lyric_id: &str, lyrics: TrackLyrics) {
@@ -63,12 +63,12 @@ impl Lyrics {
         self.lyrics = Remote::Loaded(lyrics);
     }
 
-    pub fn set_lyrics_failed(&mut self, lyric_id: &str, error: String) {
+    pub fn set_lyrics_failed(&mut self, lyric_id: &str) {
         if self.lyric_id != Some(lyric_id.into()) {
             return;
         }
 
-        self.lyrics = Remote::Failed(error);
+        self.lyrics = Remote::Failed;
     }
 
     pub fn is_available_for(&self, track_key: &str) -> bool {
