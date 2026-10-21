@@ -13,7 +13,7 @@ use crate::app::lyrics::Remote;
 use crate::app::now_playing::NowPlaying;
 use crate::app::queue::Repeat;
 use crate::app::state::AppState;
-use crate::plex::models::Track;
+use crate::plex::models::{Track, TrackLyrics};
 use crate::ui::string_formatting::{fit, truncate};
 use crate::ui::track_row;
 
@@ -181,33 +181,42 @@ fn info_lines(s: &AppState, width: usize) -> Vec<Line<'static>> {
 }
 
 fn lyrics(s: &AppState) -> Vec<Line<'static>> {
-    let current_offset = s.playback.now.position_ms as usize;
     match &s.playback.lyrics.lyrics {
         Remote::Idle => vec![Line::styled("No lyrics found", Modifier::DIM)],
         Remote::Loading => vec![Line::styled("Loading lyrics…", Modifier::DIM)],
-        Remote::Loaded(lyrics) => {
-            let active = lyrics
+        Remote::Loaded(lyrics) => match lyrics.timed {
+            true => timed_lyrics(s, lyrics),
+            false => lyrics
                 .lines
                 .iter()
-                .rposition(|l| l.offset <= current_offset);
-            let top = active.unwrap_or(0).saturating_sub(LYRICS_GRACE_OFFSET);
-            lyrics
-                .lines
-                .iter()
-                .enumerate()
-                .skip(top)
-                .map(|(i, l)| {
-                    if Some(i) == active {
-                        Line::styled(l.text.clone(), Modifier::BOLD)
-                    } else if Some(i) < active {
-                        Line::styled(l.text.clone(), Modifier::DIM)
-                    } else {
-                        Line::raw(l.text.clone())
-                    }
-                })
-                .collect()
-        }
+                .map(|l| Line::raw(l.text.clone()))
+                .collect(),
+        },
     }
+}
+
+fn timed_lyrics(s: &AppState, lyrics: &TrackLyrics) -> Vec<Line<'static>> {
+    let current_offset = s.playback.now.position_ms as usize;
+    let active = lyrics
+        .lines
+        .iter()
+        .rposition(|l| l.offset <= current_offset);
+    let top = active.unwrap_or(0).saturating_sub(LYRICS_GRACE_OFFSET);
+    lyrics
+        .lines
+        .iter()
+        .enumerate()
+        .skip(top)
+        .map(|(i, l)| {
+            if Some(i) == active {
+                Line::styled(l.text.clone(), Modifier::BOLD)
+            } else if Some(i) < active {
+                Line::styled(l.text.clone(), Modifier::DIM)
+            } else {
+                Line::raw(l.text.clone())
+            }
+        })
+        .collect()
 }
 
 fn progress_line(now: &NowPlaying, track: &Track, width: usize, accent: Color) -> Line<'static> {
