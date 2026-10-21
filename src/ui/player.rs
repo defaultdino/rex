@@ -26,6 +26,7 @@ fn player_title(action: &str, accent: Color) -> Vec<Span<'static>> {
 }
 
 const INFO_LINES: u16 = 4;
+const LYRICS_GRACE_OFFSET: usize = 2;
 
 pub fn draw_minimized_player(f: &mut Frame, s: &AppState, area: Rect) {
     let block = Block::bordered().title(player_title("maximize", s.accent));
@@ -54,31 +55,33 @@ pub fn draw_maximized_player(f: &mut Frame, s: &AppState, area: Rect) {
         (rows >= 4).then_some((cols, rows))
     };
 
-    let [header, _, list] = Layout::vertical([
+    let [header, list] = Layout::vertical([
         Constraint::Length(cover.map_or(INFO_LINES, |(_, rows)| rows.max(INFO_LINES))),
-        Constraint::Length(1),
         Constraint::Fill(1),
     ])
+    .spacing(1)
     .areas(inner);
 
     let info = match cover {
         Some((cols, _)) => {
-            let [art_area, _, info] = Layout::horizontal([
-                Constraint::Length(cols),
-                Constraint::Length(2),
-                Constraint::Fill(1),
-            ])
-            .areas(header);
-            if let Some(art) = cover_art(s, track) {
+            let [art_area, info] =
+                Layout::horizontal([Constraint::Length(cols), Constraint::Fill(1)])
+                    .spacing(1)
+                    .areas(header);
+            if let Some(art) = get_cover_art(s, track) {
                 f.render_widget(CoverArt(art), art_area);
             }
             info
         }
         None => header,
     };
-    let [info] = Layout::vertical([Constraint::Length(INFO_LINES)])
-        .flex(Flex::Center)
-        .areas(info);
+    let [lyrics_area, info] =
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(INFO_LINES)])
+            .spacing(1)
+            .flex(Flex::Center)
+            .areas(info);
+
+    f.render_widget(Paragraph::new(lyrics(s)), lyrics_area);
     f.render_widget(Paragraph::new(info_lines(s, info.width as usize)), info);
 
     let queue = &s.playback.queue;
@@ -114,7 +117,7 @@ fn cell_ratio() -> f32 {
 }
 
 /// the loaded cover, if it belongs to the current track
-fn cover_art<'a>(s: &'a AppState, track: &Track) -> Option<&'a RgbImage> {
+fn get_cover_art<'a>(s: &'a AppState, track: &Track) -> Option<&'a RgbImage> {
     s.playback
         .cover
         .as_ref()
@@ -178,17 +181,33 @@ fn info_lines(s: &AppState, width: usize) -> Vec<Line<'static>> {
 }
 
 fn lyrics(s: &AppState) -> Vec<Line<'static>> {
-    let current_offset = s.playback.now.position_ms;
-    let lyric_strings = match &s.playback.lyrics.lyrics {
-        Remote::Idle => "not loading".to_string(),
-        Remote::Loading => "Loading lyrics...".to_string(),
-        Remote::Loaded(lyrics) => lyrics
-            .lines
-            .get(0)
-            .map_or("ERROR".to_string(), |lyric_line| lyric_line.text.clone()),
-    };
-
-    vec![]
+    let current_offset = s.playback.now.position_ms as usize;
+    match &s.playback.lyrics.lyrics {
+        Remote::Idle => vec![Line::styled("No lyrics found", Modifier::DIM)],
+        Remote::Loading => vec![Line::styled("Loading lyrics…", Modifier::DIM)],
+        Remote::Loaded(lyrics) => {
+            let active = lyrics
+                .lines
+                .iter()
+                .rposition(|l| l.offset <= current_offset);
+            let top = active.unwrap_or(0).saturating_sub(LYRICS_GRACE_OFFSET);
+            lyrics
+                .lines
+                .iter()
+                .enumerate()
+                .skip(top)
+                .map(|(i, l)| {
+                    if Some(i) == active {
+                        Line::styled(l.text.clone(), Modifier::BOLD)
+                    } else if Some(i) < active {
+                        Line::styled(l.text.clone(), Modifier::DIM)
+                    } else {
+                        Line::raw(l.text.clone())
+                    }
+                })
+                .collect()
+        }
+    }
 }
 
 fn progress_line(now: &NowPlaying, track: &Track, width: usize, accent: Color) -> Line<'static> {
