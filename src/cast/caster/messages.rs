@@ -4,10 +4,11 @@ use cast_sender::namespace::connection::Connection;
 use cast_sender::namespace::heartbeat::Heartbeat;
 use cast_sender::namespace::media::{ErrorReason, Media};
 use cast_sender::namespace::receiver::{Receiver as Platform, Status};
-use cast_sender::{AppId, Payload, Response};
+use cast_sender::{AppId, Payload, Response, Volume};
 use tracing::{debug, warn};
 
 use super::{Caster, Conn, MediaApp, PLATFORM, Position, TAKEN_OVER};
+use crate::backend::{DeviceVolume, PlayerEvent};
 
 impl Caster {
     pub fn receive(&mut self, msg: Response, now: Instant) {
@@ -27,7 +28,7 @@ impl Caster {
                     self.receiver_gone(now);
                 }
             }
-            Payload::Receiver(Platform::ReceiverStatus(r)) => self.on_receiver(r.status, now),
+            Payload::Receiver(Platform::ReceiverStatus(r)) => self.on_receiver(r.status, req, now),
             Payload::Receiver(Platform::LaunchError(e)) => {
                 let msg = format!("the cast device could not start playing: {}", e.reason);
                 self.disconnect();
@@ -61,7 +62,8 @@ impl Caster {
         matches!(&self.conn, Conn::Up { app: Some(a), .. } if a.transport == transport)
     }
 
-    pub(super) fn on_receiver(&mut self, status: Status, now: Instant) {
+    pub(super) fn on_receiver(&mut self, status: Status, req: u32, now: Instant) {
+        self.on_device_volume(&status.volume, req);
         let Conn::Up { app, .. } = &mut self.conn else {
             return;
         };
@@ -86,6 +88,20 @@ impl Caster {
             }
             _ => {}
         }
+    }
+
+    fn on_device_volume(&mut self, v: &Volume, req: u32) {
+        if self.pending_volume_req.is_some_and(|r| req < r) {
+            return;
+        }
+        self.pending_volume_req = None;
+        let Some(level) = v.level else { return };
+        let d = DeviceVolume {
+            level: level as f32,
+            muted: v.muted == Some(true),
+        };
+        self.device_volume = Some(d);
+        self.emit(PlayerEvent::DeviceVolume(d));
     }
 
     pub(super) fn receiver_gone(&mut self, now: Instant) {

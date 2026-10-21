@@ -20,7 +20,7 @@ use crate::backend::Channels;
 use crate::plex::PlexClient;
 use caster::Caster;
 
-pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr, volume: f32) -> Result<(Channels, Receiver<()>)> {
+pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr) -> Result<(Channels, Receiver<()>)> {
     let server = plex.base();
     if loopback(&server) {
         bail!("rex reaches plex at {server}, which the device can't");
@@ -43,7 +43,7 @@ pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr, volume: f32) -> Result<(Channels
     let (done_tx, done_rx) = std_channel::<()>();
     thread::Builder::new().name("cast".into()).spawn(move || {
         let _done = done_tx;
-        block_on(io::run(Caster::new(plex, ev_tx, volume), ip, first, fwd_rx))
+        block_on(io::run(Caster::new(plex, ev_tx), ip, first, fwd_rx))
     })?;
     Ok(((cmd_tx, ev_rx), done_rx))
 }

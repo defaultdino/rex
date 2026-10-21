@@ -12,6 +12,7 @@ pub enum Action {
     HalfUp,
     Open,
     Play,
+    PlayShuffle,
     Back,
     ToggleFocus,
     Jump(Section),
@@ -76,7 +77,12 @@ pub const NAV_KEYS: &[Action] = &[
     Action::Search,
 ];
 
-pub const LIST_KEYS: &[Action] = &[Action::Play, Action::Append, Action::PlayNext];
+pub const LIST_KEYS: &[Action] = &[
+    Action::Play,
+    Action::PlayShuffle,
+    Action::Append,
+    Action::PlayNext,
+];
 
 pub const QUEUE_KEYS: &[Action] = &[
     Action::Remove,
@@ -138,6 +144,7 @@ impl Action {
             Action::DebugLine => "memory usage",
             Action::Quit => "quit",
             Action::Play => "play now (replace queue)",
+            Action::PlayShuffle => "play shuffled (replace queue)",
             Action::TogglePlayer => "toggle player maximized/minimized",
             Action::SearchSubmit => "search",
             Action::SearchCancel => "cancel",
@@ -240,7 +247,8 @@ pub const BINDINGS: &[Binding] = &[
     help_bar_only(bind(Action::Help, &[key('?')])),
     bind(Action::DebugLine, &[code(KeyCode::F(12))]),
     bind(Action::Quit, &[key('q')]),
-    help_bar_only(bind(Action::Play, &[key('p')])),
+    help_bar_only(bind(Action::Play, &[key('P')])),
+    help_bar_only(bind(Action::PlayShuffle, &[key('S')])),
     help_bar_only(bind(Action::SearchSubmit, &[code(KeyCode::Enter)])),
     help_bar_only(bind(Action::SearchCancel, &[code(KeyCode::Esc)])),
     bind(Action::TogglePlayer, &[key('m')]),

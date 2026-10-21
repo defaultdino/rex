@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::backend::DeviceVolume;
 use crate::plex::models::Track;
 
 #[derive(Default)]
@@ -9,6 +10,8 @@ pub struct NowPlaying {
     pub paused: bool,
     pub buffering: bool,
     pub volume: f32,
+    pub casting: bool,
+    pub device_volume: Option<DeviceVolume>,
 }
 
 impl NowPlaying {

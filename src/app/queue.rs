@@ -134,10 +134,10 @@ impl Queue {
             .collect()
     }
 
-    pub fn replace(&mut self, tracks: Vec<Arc<Track>>, start: usize) {
+    pub fn replace(&mut self, tracks: Vec<Arc<Track>>, start: Option<usize>) {
         self.entries = self.make(tracks);
         self.unshuffled = self.entries.iter().map(|e| e.id).collect();
-        self.current = (start < self.entries.len()).then_some(start);
+        self.current = start.filter(|&s| s < self.entries.len());
         if self.shuffle {
             self.shuffle_around_current();
         }
@@ -221,9 +221,8 @@ impl Queue {
         }
     }
 
-    /// moves the current entry to the front and shuffles everything else after it
     fn shuffle_around_current(&mut self) {
-        let start = self.current.unwrap_or_default() + 1;
+        let start = self.current.map_or(0, |c| c + 1);
         for i in (start + 1..self.entries.len()).rev() {
             let j = start + (self.rand() % (i - start + 1) as u64) as usize;
             self.entries.swap(i, j);

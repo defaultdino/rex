@@ -33,6 +33,15 @@ pub enum PlayerEvent {
     #[cfg_attr(not(feature = "cast"), allow(dead_code))]
     Resumed,
     BufferingChanged(bool),
+    #[cfg_attr(not(feature = "cast"), allow(dead_code))]
+    DeviceVolume(DeviceVolume),
+}
+
+#[cfg_attr(not(feature = "cast"), allow(dead_code))]
+#[derive(Debug, Clone, Copy)]
+pub struct DeviceVolume {
+    pub level: f32,
+    pub muted: bool,
 }
 
 pub fn perceptual_gain(volume: f32) -> f32 {

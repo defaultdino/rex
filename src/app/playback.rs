@@ -12,8 +12,8 @@ use super::reporting::{Report, Reporter};
 use super::state::Message;
 use super::{AddMode, ApiRequest, TrackSource};
 use crate::app::lyrics::Lyrics;
-use crate::backend::{PlayerCmd, PlayerEvent};
 use crate::plex::models::{AvailableLyrics, Track, TrackLyrics};
+use crate::backend::{DeviceVolume, PlayerCmd, PlayerEvent};
 
 const ENQUEUE_BEFORE_END_MS: u64 = 10_000;
 const RESTART_AFTER_MS: u64 = 3_000;
@@ -120,10 +120,14 @@ impl Playback {
     }
 
     #[cfg(feature = "cast")]
-    pub fn switch_player(&mut self, player: SyncSender<PlayerCmd>) {
+    pub fn switch_player(&mut self, player: SyncSender<PlayerCmd>, casting: bool) {
         self.send(PlayerCmd::Stop);
         self.player = player;
-        self.send(PlayerCmd::SetVolume(self.now.volume));
+        self.now.casting = casting;
+        self.now.device_volume = None;
+        if !casting {
+            self.send(PlayerCmd::SetVolume(self.now.volume));
+        }
         if self.now.track.is_none() || self.queue.current.is_none() {
             return;
         }
@@ -171,7 +175,7 @@ impl Playback {
 
     /// replaces the queue with `tracks` and plays from `start`
     pub fn play_tracks(&mut self, tracks: Vec<Arc<Track>>, start: usize) {
-        self.queue.replace(tracks, start);
+        self.queue.replace(tracks, Some(start));
         self.play_index(self.queue.current.unwrap_or(0));
     }
 
@@ -254,12 +258,25 @@ impl Playback {
 
     pub fn change_volume(&mut self, up: bool) {
         let step = if up { VOLUME_STEP } else { -VOLUME_STEP };
-        self.set_volume(((self.now.volume + step) * 20.0).round() / 20.0);
+        let current = match self.now.casting {
+            true => self.now.device_volume.map(|d| d.level),
+            false => Some(self.now.volume),
+        };
+        let Some(v) = current else { return };
+        self.set_volume(((v + step) * 20.0).round() / 20.0);
     }
 
     fn set_volume(&mut self, v: f32) {
-        self.now.volume = v.clamp(0.0, 1.0);
-        self.send(PlayerCmd::SetVolume(self.now.volume));
+        let v = v.clamp(0.0, 1.0);
+        if self.now.casting {
+            self.now.device_volume = Some(DeviceVolume {
+                level: v,
+                muted: false,
+            });
+        } else {
+            self.now.volume = v;
+        }
+        self.send(PlayerCmd::SetVolume(v));
     }
 
     pub fn toggle_shuffle(&mut self) {
@@ -391,6 +408,7 @@ impl Playback {
                 }
             }
             PlayerEvent::BufferingChanged(b) => self.now.buffering = b,
+            PlayerEvent::DeviceVolume(v) => self.now.device_volume = Some(v),
             PlayerEvent::Paused | PlayerEvent::Resumed => {
                 let paused = matches!(ev, PlayerEvent::Paused);
                 if self.now.track.is_some() && self.now.paused != paused {
@@ -433,7 +451,12 @@ impl Playback {
             AddMode::Append => self.queue.append(tracks),
             AddMode::Next => self.queue.play_next(tracks),
             AddMode::PlayFromStart => {
-                self.queue.replace(tracks, 0);
+                self.queue.replace(tracks, Some(0));
+                return self.play_index(0);
+            }
+            AddMode::PlayShuffled => {
+                self.queue.set_shuffle(true);
+                self.queue.replace(tracks, None);
                 return self.play_index(0);
             }
             AddMode::PlayFrom(rk) => {

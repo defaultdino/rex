@@ -21,6 +21,8 @@ use tracing::warn;
 
 use crate::audio::player;
 use crate::backend::PlayerEvent;
+#[cfg(feature = "cast")]
+use crate::cast::Device;
 use crate::config::{self, SavedState};
 use crate::media_controls::{MediaControls, run_main_loop};
 use crate::plex::api::SearchResults;
@@ -42,6 +44,7 @@ pub enum AddMode {
     /// replace the queue with the fetched tracks and start at this rating key
     PlayFrom(String),
     PlayFromStart,
+    PlayShuffled,
 }
 
 pub enum TrackSource {
@@ -120,7 +123,12 @@ pub enum AppEvent {
     },
 }
 
-pub fn run(client: Arc<PlexClient>, saved: &mut SavedState, accent: Option<&str>) -> Result<()> {
+pub fn run(
+    client: Arc<PlexClient>,
+    saved: &mut SavedState,
+    accent: Option<&str>,
+    #[cfg(feature = "cast")] static_cast_devices: Vec<Device>,
+) -> Result<()> {
     let section = saved
         .music_section
         .clone()
@@ -150,8 +158,11 @@ pub fn run(client: Arc<PlexClient>, saved: &mut SavedState, accent: Option<&str>
         saved.queue.take(),
         #[cfg(feature = "cast")]
         cast,
+        #[cfg(feature = "cast")]
+        static_cast_devices,
     );
     app.set_accent(accent);
+
     spawn_tui(rx, app, media_controls, &client, saved)
 }
 
@@ -349,14 +360,16 @@ fn send_report(c: &PlexClient, r: &Report) {
 fn spawn_forwarder(rx: Receiver<PlayerEvent>, tx: SyncSender<AppEvent>, id: u64) -> Result<()> {
     thread::Builder::new()
         .name("player-events".into())
-        .spawn(move || {
-            for ev in rx {
-                if tx.send(AppEvent::Player(id, ev)).is_err() {
-                    break;
-                }
-            }
-        })?;
+        .spawn(move || forward(rx, tx, id))?;
     Ok(())
+}
+
+fn forward(rx: Receiver<PlayerEvent>, tx: SyncSender<AppEvent>, id: u64) {
+    for ev in rx {
+        if tx.send(AppEvent::Player(id, ev)).is_err() {
+            break;
+        }
+    }
 }
 
 fn spawn_input(tx: SyncSender<AppEvent>) -> Result<()> {

@@ -13,6 +13,8 @@ use super::playback::Playback;
 use super::queue::SavedQueue;
 use super::{AddMode, ApiRequest, TrackSource};
 use crate::backend::PlayerCmd;
+#[cfg(feature = "cast")]
+use crate::cast::Device;
 
 const MESSAGE_TTL: Duration = Duration::from_secs(5);
 const QUIT_CONFIRM: Duration = Duration::from_secs(3);
@@ -73,6 +75,8 @@ pub struct AppState {
     pub debug_line: bool,
     /// colour for focus, selection and highlights, from `accent_color` in the config
     pub accent: Color,
+    #[cfg(feature = "cast")]
+    pub static_cast_devices: Vec<Device>,
     pub message: Option<Message>,
     pub quit: bool,
     pub backend: u64,
@@ -87,6 +91,7 @@ impl AppState {
         volume: f32,
         saved: Option<SavedQueue>,
         #[cfg(feature = "cast")] cast: super::cast::CastState,
+        #[cfg(feature = "cast")] static_cast_devices: Vec<Device>,
     ) -> Self {
         Self {
             screen: Screen::Browse(Focus::List),
@@ -94,6 +99,8 @@ impl AppState {
             browser: Browser::new(api.clone()),
             #[cfg(feature = "cast")]
             cast,
+            #[cfg(feature = "cast")]
+            static_cast_devices,
             backend: 0,
             playback: Playback::new(api, player, volume, saved),
             quit_armed: None,
@@ -235,7 +242,9 @@ impl AppState {
             Action::Help => self.modal = Some(Modal::Help),
             Action::DebugLine => self.debug_line = !self.debug_line,
             Action::Quit => self.request_quit(),
+            // Play is always shuffled when playing on Artist level
             Action::Play => self.add_selected(AddMode::PlayFromStart),
+            Action::PlayShuffle => self.add_selected(AddMode::PlayShuffled),
             Action::TogglePlayer => {
                 self.screen = match self.screen {
                     Screen::Browse(_) => Screen::Player,

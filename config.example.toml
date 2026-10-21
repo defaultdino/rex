@@ -3,3 +3,12 @@
 # - a 256-color index ("208")
 # - hex ("#ff8800")
 accent_color = "cyan"
+
+# a static list of devices to offer casting to.
+# will be used in replacement of mDNS
+[[static_cast_devices]]
+name = "Living Room TV"
+ip = "192.168.1.20"
+[[static_cast_devices]]
+name = "Garage Speakers"
+ip = "192.168.1.50"

@@ -12,7 +12,7 @@ use cast_sender::Payload;
 use cast_sender::namespace::media::Media;
 use tracing::debug;
 
-use crate::backend::PlayerEvent;
+use crate::backend::{DeviceVolume, PlayerEvent};
 use crate::plex::PlexClient;
 use crate::plex::models::Track;
 
@@ -75,7 +75,8 @@ pub struct Caster {
     queue_refused: bool,
     paused: bool,
     buffering: bool,
-    volume: f32,
+    device_volume: Option<DeviceVolume>,
+    pending_volume_req: Option<u32>,
     position: Position,
     position_emitted: Instant,
     pending_toggle: Option<u32>,
@@ -85,7 +86,7 @@ pub struct Caster {
 }
 
 impl Caster {
-    pub fn new(plex: Arc<PlexClient>, events: SyncSender<PlayerEvent>, volume: f32) -> Self {
+    pub fn new(plex: Arc<PlexClient>, events: SyncSender<PlayerEvent>) -> Self {
         Self {
             plex,
             events,
@@ -98,7 +99,8 @@ impl Caster {
             queue_refused: false,
             paused: false,
             buffering: false,
-            volume,
+            device_volume: None,
+            pending_volume_req: None,
             position: Position::still(0),
             position_emitted: Instant::now(),
             pending_toggle: None,
@@ -130,12 +132,13 @@ impl Caster {
         }
     }
 
-    fn send_platform(&mut self, payload: impl Into<Payload>, with_id: bool) {
+    fn send_platform(&mut self, payload: impl Into<Payload>, with_id: bool) -> Option<u32> {
         let req = with_id.then(|| {
             self.last_req += 1;
             self.last_req
         });
         self.outbox.push((PLATFORM.into(), payload.into(), req));
+        req
     }
 
     fn send_media(&mut self, m: Media) -> Option<u32> {

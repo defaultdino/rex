@@ -8,14 +8,15 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::app::queue::SavedQueue;
 
+#[cfg(feature = "cast")]
+use crate::cast::Device;
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// anything ratatui's `Color` parses
-    /// - name
-    /// - 256-colour index
-    /// - `#rrggbb`
     pub accent_color: Option<String>,
+    #[cfg(feature = "cast")]
+    pub static_cast_devices: Option<Vec<Device>>,
     client_identifier: Option<String>,
     token: Option<String>,
     server_url: Option<String>,

@@ -256,8 +256,15 @@ fn status_line(s: &AppState) -> Line<'static> {
         Span::styled("shuffle", style(queue.shuffle)),
         Span::raw(" · "),
         Span::styled(repeat, style(queue.repeat != Repeat::Off)),
-        Span::raw(format!(" · vol {:.0}%", s.playback.now.volume * 100.0)),
     ];
+    let now = &s.playback.now;
+    let vol = match (now.casting, now.device_volume) {
+        (false, _) => format!(" · vol {:.0}%", now.volume * 100.0),
+        (true, None) => " · device vol –".into(),
+        (true, Some(d)) if d.muted => " · device muted".into(),
+        (true, Some(d)) => format!(" · device vol {:.0}%", d.level * 100.0),
+    };
+    spans.push(Span::raw(vol));
     if s.debug_line {
         spans.push(Span::raw(format!(
             " · rss {:.1} MB",

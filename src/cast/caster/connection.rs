@@ -21,6 +21,7 @@ impl Caster {
             last_heard: now,
             last_ping: now,
         };
+        self.pending_volume_req = None;
         self.send_platform(Connection::Connect, false);
         self.send_platform(Platform::launch_request(AppId::DefaultMediaReceiver), true);
     }

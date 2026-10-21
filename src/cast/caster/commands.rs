@@ -6,11 +6,12 @@ use cast_sender::namespace::media::{
     LoadRequestData, Media, QueueInsertRequestData, QueueItem, QueueRemoveRequestData,
     SeekRequestData, VolumeRequestData,
 };
+use cast_sender::namespace::receiver::{Receiver as Platform, SetVolumeRequest};
 use tracing::debug;
 
 use super::media::{request, secs};
 use super::{Caster, Conn, Current, Position, QueuedNext};
-use crate::backend::{PlayerCmd, perceptual_gain};
+use crate::backend::PlayerCmd;
 use crate::plex::models::Track;
 
 const PRELOAD_SECS: f64 = 20.0;
@@ -69,10 +70,7 @@ impl Caster {
                 self.position = Position::still(0);
                 self.clear_in_flight();
             }
-            PlayerCmd::SetVolume(v) => {
-                self.volume = v;
-                self.sync_stream_volume();
-            }
+            PlayerCmd::SetVolume(v) => self.set_device_volume(v),
         }
     }
 
@@ -141,6 +139,22 @@ impl Caster {
         }));
     }
 
+    fn set_device_volume(&mut self, v: f32) {
+        let set = |volume| Platform::SetVolume(SetVolumeRequest { volume });
+        if self.device_volume.is_some_and(|d| d.muted) {
+            let unmute = Volume {
+                muted: Some(false),
+                ..Default::default()
+            };
+            self.send_platform(set(unmute), true);
+        }
+        let level = Volume {
+            level: Some(v as f64),
+            ..Default::default()
+        };
+        self.pending_volume_req = self.send_platform(set(level), true);
+    }
+
     pub(super) fn sync_stream_volume(&mut self) {
         let Some(id) = self.media_session() else {
             return;
@@ -148,7 +162,7 @@ impl Caster {
         self.send_media(Media::SetVolume(VolumeRequestData {
             media_session_id: Some(id),
             volume: Volume {
-                level: Some(perceptual_gain(self.volume) as f64),
+                level: Some(1.0),
                 muted: Some(false),
                 control_type: None,
             },
