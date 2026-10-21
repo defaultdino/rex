@@ -48,13 +48,13 @@ impl Options {
 }
 
 // sets up a file logger in the app directory
-// as rex.log with daily log rotations
+// as rexamp.log with daily log rotations
 pub fn setup_logging(level: Level) -> anyhow::Result<()> {
     let dir = config::state_dir()?;
     std::fs::create_dir_all(&dir)?;
     let appender = RollingFileAppender::builder()
         .rotation(Rotation::DAILY)
-        .filename_prefix("rex")
+        .filename_prefix("rexamp")
         .filename_suffix("log")
         .max_log_files(3)
         .build(dir)?;

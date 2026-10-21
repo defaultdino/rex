@@ -35,8 +35,8 @@ impl MediaControls {
     /// registers on the session bus; returns `None` (after logging once) when D-Bus isn't usable
     pub fn start(tx: SyncSender<AppEvent>) -> Option<Self> {
         let config = PlatformConfig {
-            dbus_name: "rex",
-            display_name: "rex",
+            dbus_name: "rexamp",
+            display_name: "rexamp",
             hwnd: None,
         };
         let mut controls = match souvlaki::MediaControls::new(config) {

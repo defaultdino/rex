@@ -23,7 +23,7 @@ use caster::Caster;
 pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr) -> Result<(Channels, Receiver<()>)> {
     let server = plex.base();
     if loopback(&server) {
-        bail!("rex reaches plex at {server}, which the device can't");
+        bail!("rexamp reaches plex at {server}, which the device can't");
     }
     let first = block_on(io::connect(ip)).with_context(|| format!("casting to {ip}"))?;
     let (cmd_tx, cmd_rx) = sync_channel(32);

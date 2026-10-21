@@ -1,35 +1,35 @@
-.TH REX 1 2026-10-20 "rex 2.0.0" "User Commands"
+.TH REXAMP 1 2026-10-21 "rexamp 3.0.0" "User Commands"
 .SH NAME
-rex \- terminal music player for Plex Media Server
+rexamp \- terminal music player for Plex Media Server
 .SH SYNOPSIS
-.B rex
+.B rexamp
 .RB [ \-\-log\-level
 .IR level ]
 .br
-.B rex login
+.B rexamp login
 .br
-.B rex logout
+.B rexamp logout
 .br
-.B rex switch
+.B rexamp switch
 .RI [ library ]
 .br
-.B rex
+.B rexamp
 .BR \-\-version " | " \-\-help
 .SH DESCRIPTION
-.B rex
+.B rexamp
 plays the music library on your Plex Media Server from the terminal.
 Run without a subcommand, it opens the player.
 On first run it signs in to Plex and asks which server and music library to use.
 .PP
 The queue and volume are saved between sessions.
 When D\-Bus (Linux) or Control Center (macOS) is available,
-.B rex
+.B rexamp
 also responds to media keys and system media controls.
 .SH COMMANDS
 .TP
 .B login
 Sign in to Plex and choose a server and music library.
-.B rex
+.B rexamp
 prints a URL; open it in a browser and sign in.
 It waits up to five minutes for the sign\-in to finish.
 Signing in forgets the previously chosen server and library.
@@ -195,11 +195,11 @@ Devices are found with mDNS, unless
 .B static_cast_devices
 is set in the configuration file, in which case only those devices are offered.
 .SH CONFIGURATION
-.B rex
+.B rexamp
 reads
-.IR $XDG_CONFIG_HOME/rex/config.toml ,
+.IR $XDG_CONFIG_HOME/rexamp/config.toml ,
 by default
-.IR ~/.config/rex/config.toml .
+.IR ~/.config/rexamp/config.toml .
 The file and every key in it are optional.
 .TP
 .B accent_color
@@ -236,43 +236,43 @@ ip = "192.168.1.20"
 .RE
 .SH FILES
 .TP
-.I ~/.config/rex/config.toml
+.I ~/.config/rexamp/config.toml
 Configuration, see
 .BR CONFIGURATION .
 .TP
-.I ~/.local/state/rex/state.json
+.I ~/.local/state/rexamp/state.json
 Saved state: Plex tokens, chosen server and library, volume and queue.
 Written with mode 0600.
 Versions 1.5 and earlier kept the login and server keys in
 .IR config.toml ;
-.B rex
+.B rexamp
 copies them here on first start, after which they can be removed from
 .IR config.toml .
 .TP
-.I ~/.local/state/rex/rex.YYYY\-MM\-DD.log
+.I ~/.local/state/rexamp/rexamp.YYYY\-MM\-DD.log
 Log files, rotated daily; the last three are kept.
 .PP
 On macOS these files live in
-.IR ~/Library/Application\ Support/rex/ .
+.IR ~/Library/Application\ Support/rexamp/ .
 .SH EXIT STATUS
 0 on success, non\-zero on error.
 .SH EXAMPLES
 Sign in and open the player:
 .PP
 .RS
-.B rex
+.B rexamp
 .RE
 .PP
 Use the second music library without being asked:
 .PP
 .RS
-.B rex switch 2
+.B rexamp switch 2
 .RE
 .PP
 Run with verbose logging:
 .PP
 .RS
-.B rex \-\-log\-level debug
+.B rexamp \-\-log\-level debug
 .RE
 .SH AUTHOR
 Adis Veletanlic <adisveletanlic@proton.me>

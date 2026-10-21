@@ -69,7 +69,7 @@ pub fn login(saved: &SavedState) -> Result<String> {
     let tv = PlexClient::new(PLEX_TV, "", &saved.client_identifier, API_TIMEOUT);
     let pin: Pin = tv.post("/api/v2/pins", &[("strong", "true")])?;
     println!(
-        "Open this URL in a browser to sign in:\n\n  https://app.plex.tv/auth#?clientID={}&code={}&context%5Bdevice%5D%5Bproduct%5D=rex\n\nWaiting…",
+        "Open this URL in a browser to sign in:\n\n  https://app.plex.tv/auth#?clientID={}&code={}&context%5Bdevice%5D%5Bproduct%5D=rexamp\n\nWaiting…",
         saved.client_identifier, pin.code
     );
     let deadline = Instant::now() + Duration::from_secs(300);
@@ -100,7 +100,7 @@ pub fn switch_section(saved: &mut SavedState, pick: Option<usize>) -> Result<Str
     let account = saved
         .token
         .clone()
-        .context("not logged in; run `rex login`")?;
+        .context("not logged in; run `rexamp login`")?;
     discover(saved, &account, None, pick).map(|(_, title)| title)
 }
 
@@ -110,7 +110,7 @@ fn connect_server(saved: &mut SavedState) -> Result<PlexClient> {
             .server_token
             .clone()
             .or_else(|| saved.token.clone())
-            .context("server_url is set but no token; run `rex login`")?;
+            .context("server_url is set but no token; run `rexamp login`")?;
 
         if probe(&url, saved.server_id.as_deref()) {
             return Ok(PlexClient::new(
@@ -127,14 +127,14 @@ fn connect_server(saved: &mut SavedState) -> Result<PlexClient> {
     let account = saved
         .token
         .clone()
-        .context("not logged in; run `rex login`")?;
+        .context("not logged in; run `rexamp login`")?;
 
     let only = saved.server_id.clone();
     discover(saved, &account, only.as_deref(), None).map(|(client, _)| client)
 }
 
 fn probe(uri: &str, expected_id: Option<&str>) -> bool {
-    let c = PlexClient::new(uri, "", "rex-probe", PROBE_TIMEOUT);
+    let c = PlexClient::new(uri, "", "rexamp-probe", PROBE_TIMEOUT);
     match c.get_once::<Container<Identity>>("/identity", &[]) {
         Ok(id) => expected_id.is_none_or(|e| e == id.mc.machine_identifier),
         Err(e) => {

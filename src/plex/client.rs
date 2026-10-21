@@ -40,7 +40,7 @@ impl PlexClient {
             .into();
         let device = std::fs::read_to_string("/proc/sys/kernel/hostname")
             .map(|h| h.trim().to_owned())
-            .unwrap_or_else(|_| "rex".into());
+            .unwrap_or_else(|_| "rexamp".into());
         Self {
             agent,
             stream_agent,
@@ -72,7 +72,7 @@ impl PlexClient {
     fn headers<B>(&self, mut r: RequestBuilder<B>, query: &[(&str, &str)]) -> RequestBuilder<B> {
         r = r
             .header("Accept", "application/json")
-            .header("X-Plex-Product", "rex")
+            .header("X-Plex-Product", "rexamp")
             .header("X-Plex-Version", env!("CARGO_PKG_VERSION"))
             .header("X-Plex-Client-Identifier", &self.client_id)
             .header("X-Plex-Platform", "Linux")
@@ -214,7 +214,9 @@ fn is_network(e: &ureq::Error) -> bool {
 fn describe(e: ureq::Error, what: &str) -> anyhow::Error {
     match e {
         ureq::Error::StatusCode(401) => {
-            anyhow!("the server rejected the saved token (401); run `rex login` to sign in again")
+            anyhow!(
+                "the server rejected the saved token (401); run `rexamp login` to sign in again"
+            )
         }
         e => anyhow::Error::new(e).context(what.to_owned()),
     }

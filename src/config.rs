@@ -41,7 +41,7 @@ pub struct SavedState {
     pub queue: Option<SavedQueue>,
 }
 
-/// a queue saved by another rex version may not parse..
+/// a queue saved by another rexamp version may not parse..
 /// dropping it is "better" than refusing to start
 fn queue_or_none<'de, D: Deserializer<'de>>(d: D) -> Result<Option<SavedQueue>, D::Error> {
     let v = serde_json::Value::deserialize(d)?;
@@ -67,7 +67,7 @@ impl Default for SavedState {
 }
 
 pub fn dirs() -> Result<ProjectDirs> {
-    ProjectDirs::from("", "", "rex").context("no home directory")
+    ProjectDirs::from("", "", "rexamp").context("no home directory")
 }
 
 fn config_path() -> Result<PathBuf> {
