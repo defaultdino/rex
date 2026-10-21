@@ -9,6 +9,7 @@ use ratatui::widgets::{Block, Paragraph, Widget};
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::browser::ListKind;
+use crate::app::lyrics::Remote;
 use crate::app::now_playing::NowPlaying;
 use crate::app::queue::Repeat;
 use crate::app::state::AppState;
@@ -160,8 +161,22 @@ fn info_lines(s: &AppState, width: usize) -> Vec<Line<'static>> {
         ),
         Line::raw(truncate(&artist_album.join(" — "), width)),
         progress_line(now, track, width, s.accent),
+        lyrics(s),
         status_line(s),
     ]
+}
+
+fn lyrics(s: &AppState) -> Line<'static> {
+    let lyric_string = match &s.playback.lyrics.lyrics {
+        Remote::Idle => "not loading".to_string(),
+        Remote::Loading => "Loading lyrics...".to_string(),
+        Remote::Loaded(lyrics) => lyrics
+            .lines
+            .get(0)
+            .map_or("ERROR".to_string(), |lyric_line| lyric_line.text.clone()),
+    };
+
+    Line::raw(lyric_string)
 }
 
 fn progress_line(now: &NowPlaying, track: &Track, width: usize, accent: Color) -> Line<'static> {

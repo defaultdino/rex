@@ -1,7 +1,4 @@
-use crate::{
-    app::state::AppState,
-    plex::models::{AvailableLyrics, TrackLyrics},
-};
+use crate::plex::models::{AvailableLyrics, TrackLyrics};
 
 pub enum Remote<T> {
     Idle,
@@ -65,4 +62,16 @@ impl Lyrics {
     pub fn is_loaded_for(&self, lyrics_id: &str) -> bool {
         self.lyric_id == Some(lyrics_id.into()) && matches!(self.lyrics, Remote::Loaded(_))
     }
+
+    pub fn best_available(&self) -> Option<&AvailableLyrics> {
+        let Remote::Loaded(als) = &self.available else {
+            return None;
+        };
+
+        als.iter().max_by_key(|al| score_available_lyrics(al))
+    }
+}
+
+fn score_available_lyrics(lyrics: &AvailableLyrics) -> usize {
+    usize::from(lyrics.timed) + usize::from(lyrics.format == "lrc")
 }

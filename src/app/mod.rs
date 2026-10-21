@@ -241,7 +241,6 @@ fn event_loop(
         }
         state.expire_message();
         let playback = &mut state.playback;
-        playback.sync_track_data();
         if playback.media_controls_dirty {
             playback.media_controls_dirty = false;
             if let Some(m) = media_controls.as_deref_mut() {

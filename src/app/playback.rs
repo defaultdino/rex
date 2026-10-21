@@ -338,6 +338,7 @@ impl Playback {
                     self.seek_to(ms);
                 }
                 self.sync_next();
+                self.sync_track_data();
             }
             PlayerEvent::TrackEnded => {
                 let reports = self.reporter.ended();
@@ -548,7 +549,13 @@ impl Playback {
         result: Result<Vec<AvailableLyrics>, String>,
     ) {
         match result {
-            Ok(available_lyrics) => self.lyrics.set_available(&rating_key, available_lyrics),
+            Ok(available_lyrics) => {
+                self.lyrics.set_available(&rating_key, available_lyrics);
+                if let Some(best) = self.lyrics.best_available() {
+                    let lyrics_id = best.id.clone();
+                    self.fetch_lyrics(lyrics_id);
+                }
+            }
             Err(e) => warn!("available_lyrics: {e}"),
         }
     }
@@ -576,7 +583,7 @@ impl Playback {
     pub fn on_lyrics(&mut self, lyrics_id: String, result: Result<TrackLyrics, String>) {
         match result {
             Ok(lyrics) => self.lyrics.set_lyrics(&lyrics_id, lyrics),
-            Err(e) => warn!("available_lyrics: {e}"),
+            Err(e) => warn!("lyrics: {e}"),
         }
     }
 

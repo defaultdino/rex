@@ -88,15 +88,15 @@ pub struct TrackMetadata {
 
 #[derive(Debug)]
 pub struct TrackLyrics {
-    timed: bool,
-    provider: String,
-    lines: Vec<LyricLine>,
+    pub timed: bool,
+    pub provider: String,
+    pub lines: Vec<LyricLine>,
 }
 
 #[derive(Debug)]
 pub struct LyricLine {
-    offset: usize,
-    text: String,
+    pub offset: usize,
+    pub text: String,
 }
 
 #[derive(Deserialize, Default)]
@@ -156,6 +156,7 @@ pub(super) struct MetadataList {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct RawLyricsContainer {
+    #[serde(rename = "Lyrics")]
     pub lyrics: Vec<RawLyrics>,
 }
 
@@ -168,14 +169,15 @@ pub(super) struct RawLyrics {
     lines: Vec<RawLine>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
 struct RawLine {
-    span: Vec<RawSpan>,
+    #[serde(rename = "Span")]
+    span: Vec<Option<RawSpan>>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
 struct RawSpan {
     start_offset: usize,
     text: String,
@@ -190,7 +192,7 @@ impl From<RawLyrics> for TrackLyrics {
                 .lines
                 .iter()
                 .filter_map(|l| {
-                    l.span.iter().next().map(|s| {
+                    l.span.iter().flatten().next().map(|s| {
                         return LyricLine {
                             offset: s.start_offset,
                             text: s.text.clone(),
