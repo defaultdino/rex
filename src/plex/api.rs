@@ -111,9 +111,9 @@ impl PlexClient {
         let track_metadata: Option<TrackMetadata> =
             c.mc.items.into_iter().map(TrackMetadata::from).next();
 
-        return track_metadata
+        track_metadata
             .map(|tm| Ok(tm.lyrics))
-            .unwrap_or_else(|| Ok(vec![]));
+            .unwrap_or_else(|| Ok(vec![]))
     }
 
     pub fn lyrics(&self, lyrics_id: &str) -> Result<TrackLyrics> {

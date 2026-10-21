@@ -92,7 +92,7 @@ impl Lyrics {
 
     pub fn next_lyrics_after(&self, lyric_id: Option<&str>) -> Option<String> {
         let Some(id) = lyric_id else {
-            return self.best_available().get(0).map(|al| al.id.clone());
+            return self.best_available().first().map(|al| al.id.clone());
         };
 
         if self.lyric_id.as_deref() != lyric_id {

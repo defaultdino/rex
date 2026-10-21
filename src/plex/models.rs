@@ -188,11 +188,9 @@ impl From<RawLyrics> for TrackLyrics {
                 .lines
                 .iter()
                 .filter_map(|l| {
-                    l.span.iter().flatten().next().map(|s| {
-                        return LyricLine {
-                            offset: s.start_offset,
-                            text: s.text.clone(),
-                        };
+                    l.span.iter().flatten().next().map(|s| LyricLine {
+                        offset: s.start_offset,
+                        text: s.text.clone(),
                     })
                 })
                 .collect(),

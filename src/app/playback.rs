@@ -12,8 +12,8 @@ use super::reporting::{Report, Reporter};
 use super::state::Message;
 use super::{AddMode, ApiRequest, TrackSource};
 use crate::app::lyrics::Lyrics;
-use crate::plex::models::{AvailableLyrics, Track, TrackLyrics};
 use crate::backend::{DeviceVolume, PlayerCmd, PlayerEvent};
+use crate::plex::models::{AvailableLyrics, Track, TrackLyrics};
 
 const ENQUEUE_BEFORE_END_MS: u64 = 10_000;
 const RESTART_AFTER_MS: u64 = 3_000;
