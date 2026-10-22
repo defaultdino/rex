@@ -16,7 +16,7 @@ const BUFFERING_AFTER: Duration = Duration::from_millis(200);
 const JUMP_AHEAD: u64 = 256 * 1024;
 /// a blocked read with no download progress for this long restarts the download
 const STALL_AFTER: Duration = Duration::from_secs(10);
-/// a read blocked this long without progress fails, so the player thread is never stuck for good
+/// a read blocked this long without progress fails, so a decode thread is never stuck for good
 const GIVE_UP_AFTER: Duration = Duration::from_secs(30);
 /// network errors tolerated in a row (2 + 4 + 8 + 8 + 8 s of backoff) before giving up
 const RETRIES: u32 = 5;

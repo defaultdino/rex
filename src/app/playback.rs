@@ -99,7 +99,7 @@ impl Playback {
         self.notice = Some(Message::info(text));
     }
 
-    /// never blocks the UI: the player thread can be stuck in a stalled read for a while
+    /// never blocks the UI, even if the player falls behind
     fn send(&mut self, cmd: PlayerCmd) {
         match self.player.try_send(cmd) {
             Ok(()) => {}
