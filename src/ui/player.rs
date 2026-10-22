@@ -2,17 +2,18 @@ use image::RgbImage;
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::terminal::window_size;
-use ratatui::layout::{Margin, Rect};
+use ratatui::layout::{Constraint, Flex, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Widget};
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::browser::ListKind;
+use crate::app::lyrics::Remote;
 use crate::app::now_playing::NowPlaying;
 use crate::app::queue::Repeat;
 use crate::app::state::AppState;
-use crate::plex::models::Track;
+use crate::plex::models::{Track, TrackLyrics};
 use crate::ui::string_formatting::{fit, truncate};
 use crate::ui::track_row;
 
@@ -25,6 +26,7 @@ fn player_title(action: &str, accent: Color) -> Vec<Span<'static>> {
 }
 
 const INFO_LINES: u16 = 4;
+const LYRICS_GRACE_OFFSET: usize = 2;
 
 pub fn draw_minimized_player(f: &mut Frame, s: &AppState, area: Rect) {
     let block = Block::bordered().title(player_title("maximize", s.accent));
@@ -42,33 +44,47 @@ pub fn draw_maximized_player(f: &mut Frame, s: &AppState, area: Rect) {
         return;
     };
 
-    let mut info = inner;
-    let mut header = INFO_LINES;
-
-    if !track.thumb.is_empty() {
+    let cover = if track.thumb.is_empty() {
+        None
+    } else {
         let ratio = cell_ratio();
         let rows = (inner.height / 2)
             .min(16)
             .min((f32::from(inner.width / 3) / ratio) as u16);
         let cols = (f32::from(rows) * ratio).round() as u16;
-        if rows >= 4 {
-            if let Some(art) = cover_art(s, track) {
-                f.render_widget(CoverArt(art), Rect::new(inner.x, inner.y, cols, rows));
-            }
-            info.x += cols + 2;
-            info.width = info.width.saturating_sub(cols + 2);
-            header = header.max(rows);
-        }
-    }
+        (rows >= 4).then_some((cols, rows))
+    };
 
-    info.y += (header - INFO_LINES) / 2;
-    info.height = INFO_LINES.min(inner.height);
+    let [header, list] = Layout::vertical([
+        Constraint::Length(cover.map_or(INFO_LINES, |(_, rows)| rows.max(INFO_LINES))),
+        Constraint::Fill(1),
+    ])
+    .spacing(1)
+    .areas(inner);
+
+    let info = match cover {
+        Some((cols, _)) => {
+            let [art_area, info] =
+                Layout::horizontal([Constraint::Length(cols), Constraint::Fill(1)])
+                    .spacing(1)
+                    .areas(header);
+            if let Some(art) = get_cover_art(s, track) {
+                f.render_widget(CoverArt(art), art_area);
+            }
+            info
+        }
+        None => header,
+    };
+    let [lyrics_area, info] =
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(INFO_LINES)])
+            .spacing(1)
+            .flex(Flex::Center)
+            .areas(info);
+
+    f.render_widget(Paragraph::new(lyrics(s)), lyrics_area);
     f.render_widget(Paragraph::new(info_lines(s, info.width as usize)), info);
 
     let queue = &s.playback.queue;
-    let mut list = inner;
-    list.y += header + 1;
-    list.height = list.height.saturating_sub(header + 1);
     let width = list.width as usize;
     let next = queue.current.map_or(0, |i| i + 1);
 
@@ -101,7 +117,7 @@ fn cell_ratio() -> f32 {
 }
 
 /// the loaded cover, if it belongs to the current track
-fn cover_art<'a>(s: &'a AppState, track: &Track) -> Option<&'a RgbImage> {
+fn get_cover_art<'a>(s: &'a AppState, track: &Track) -> Option<&'a RgbImage> {
     s.playback
         .cover
         .as_ref()
@@ -162,6 +178,46 @@ fn info_lines(s: &AppState, width: usize) -> Vec<Line<'static>> {
         progress_line(now, track, width, s.accent),
         status_line(s),
     ]
+}
+
+fn lyrics(s: &AppState) -> Vec<Line<'static>> {
+    match &s.playback.lyrics.lyrics {
+        Remote::Idle => vec![Line::styled("No lyrics found", Modifier::DIM)],
+        Remote::Loading => vec![Line::styled("Loading lyrics…", Modifier::DIM)],
+        Remote::Failed => vec![Line::styled("Couldn't load lyrics", Modifier::DIM)],
+        Remote::Loaded(lyrics) => match lyrics.timed {
+            true => timed_lyrics(s, lyrics),
+            false => lyrics
+                .lines
+                .iter()
+                .map(|l| Line::raw(l.text.clone()))
+                .collect(),
+        },
+    }
+}
+
+fn timed_lyrics(s: &AppState, lyrics: &TrackLyrics) -> Vec<Line<'static>> {
+    let current_offset = s.playback.now.position_ms as usize;
+    let active = lyrics
+        .lines
+        .iter()
+        .rposition(|l| l.offset <= current_offset);
+    let top = active.unwrap_or(0).saturating_sub(LYRICS_GRACE_OFFSET);
+    lyrics
+        .lines
+        .iter()
+        .enumerate()
+        .skip(top)
+        .map(|(i, l)| {
+            if Some(i) == active {
+                Line::styled(l.text.clone(), s.accent)
+            } else if Some(i) < active {
+                Line::styled(l.text.clone(), Modifier::DIM)
+            } else {
+                Line::raw(l.text.clone())
+            }
+        })
+        .collect()
 }
 
 fn progress_line(now: &NowPlaying, track: &Track, width: usize, accent: Color) -> Line<'static> {
