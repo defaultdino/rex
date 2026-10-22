@@ -8,7 +8,7 @@ pub mod queue;
 mod reporting;
 pub mod state;
 
-use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, channel, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -66,7 +66,6 @@ pub enum ApiRequest {
         view: u64,
         query: String,
     },
-    Report(Vec<Report>),
     Cover {
         thumb: String,
     },
@@ -126,6 +125,10 @@ pub fn run(
     let (player_tx, player_rx) = player::spawn(client.clone(), cache, saved.volume)?;
 
     spawn_api_workers(client.clone(), section, saved, api_rx, tx.clone())?;
+
+    let (report_tx, report_rx) = channel();
+    let reports_done = spawn_reporter(client.clone(), report_rx)?;
+
     spawn_forwarder(player_rx, tx.clone(), 0)?;
 
     #[cfg(unix)]
@@ -138,6 +141,7 @@ pub fn run(
 
     let mut app = AppState::new(
         api_tx,
+        report_tx,
         player_tx,
         saved.volume,
         saved.queue.take(),
@@ -148,7 +152,7 @@ pub fn run(
     );
     app.set_accent(accent);
 
-    spawn_tui(rx, app, media_controls, &client, saved)
+    spawn_tui(rx, app, media_controls, reports_done, saved)
 }
 
 /// runs the ui on a scoped thread while the main thread runs the platform run loop
@@ -156,7 +160,7 @@ fn spawn_tui(
     rx: Receiver<AppEvent>,
     mut state: AppState,
     mut media_controls: Option<MediaControls>,
-    client: &PlexClient,
+    reports_done: Receiver<()>,
     saved: &mut SavedState,
 ) -> Result<()> {
     thread::scope(|s| {
@@ -168,7 +172,12 @@ fn spawn_tui(
                 let result = event_loop(&mut terminal, &mut state, &rx, media_controls.as_mut());
                 ratatui::restore();
 
-                shutdown(&mut state, client, saved)?;
+                let closed = shutdown(&mut state, saved);
+
+                drop(state);
+                let _ = reports_done.recv_timeout(REPORT_TIMEOUT);
+                closed?;
+
                 result
             })?;
         run_main_loop(&tui);
@@ -177,13 +186,12 @@ fn spawn_tui(
 }
 
 /// stops playback, sends the final playback reports and saves what the session changed
-fn shutdown(state: &mut AppState, client: &PlexClient, saved: &mut SavedState) -> Result<()> {
+fn shutdown(state: &mut AppState, saved: &mut SavedState) -> Result<()> {
     state.playback.stop_player();
     #[cfg(feature = "cast")]
     let cast = state.close_cast();
-    for r in state.playback.reporter.stopped() {
-        send_report(client, &r);
-    }
+    let stopped = state.playback.reporter.stopped();
+    state.playback.report(stopped);
     let result = save_session(state, saved);
     #[cfg(feature = "cast")]
     cast::wait_closed(cast);
@@ -332,6 +340,19 @@ fn send_report(c: &PlexClient, r: &Report) {
     }
 }
 
+fn spawn_reporter(client: Arc<PlexClient>, rx: Receiver<Vec<Report>>) -> Result<Receiver<()>> {
+    let (done_tx, done_rx) = channel::<()>();
+    thread::Builder::new()
+        .name("reporter".into())
+        .spawn(move || {
+            let _done = done_tx;
+            for r in rx.iter().flatten() {
+                send_report(&client, &r);
+            }
+        })?;
+    Ok(done_rx)
+}
+
 fn spawn_forwarder(rx: Receiver<PlayerEvent>, tx: SyncSender<AppEvent>, id: u64) -> Result<()> {
     thread::Builder::new()
         .name("player-events".into())
@@ -431,10 +452,6 @@ impl ApiContext {
                 mode,
                 result: self.call(|| fetch_tracks(c, &source)).map_err(err),
             },
-            ApiRequest::Report(reports) => {
-                reports.iter().for_each(|r| send_report(c, r));
-                return None;
-            }
             ApiRequest::Cover { thumb } => AppEvent::Cover {
                 result: self.call(|| fetch_cover(c, &thumb)).map_err(err),
                 thumb,

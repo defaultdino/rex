@@ -33,7 +33,6 @@ pub enum Action {
     MoveUp,
     Clear,
     Help,
-    DebugLine,
     Quit,
     TogglePlayer,
     SearchSubmit,
@@ -91,8 +90,6 @@ pub const QUEUE_KEYS: &[Action] = &[
     Action::MoveUp,
 ];
 
-pub const MAXIMIZED_PLAYER_KEYS: &[Action] = &[];
-
 pub const SEARCH_INPUT_KEYS: &[Action] = &[Action::SearchSubmit, Action::SearchCancel];
 
 pub const HELP_KEYS: &[Action] = &[Action::Help, Action::Quit, Action::Back];
@@ -141,7 +138,6 @@ impl Action {
             Action::MoveUp => "queue: move up",
             Action::Clear => "queue: clear",
             Action::Help => "help",
-            Action::DebugLine => "memory usage",
             Action::Quit => "quit",
             Action::Play => "play now (replace queue)",
             Action::PlayShuffle => "play shuffled (replace queue)",
@@ -245,7 +241,6 @@ pub const BINDINGS: &[Binding] = &[
     help_bar_only(bind(Action::MoveUp, &[key('K')])),
     help_bar_only(bind(Action::Clear, &[key('D')])),
     help_bar_only(bind(Action::Help, &[key('?')])),
-    bind(Action::DebugLine, &[code(KeyCode::F(12))]),
     bind(Action::Quit, &[key('q')]),
     help_bar_only(bind(Action::Play, &[key('P')])),
     help_bar_only(bind(Action::PlayShuffle, &[key('S')])),

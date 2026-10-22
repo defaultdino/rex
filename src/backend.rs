@@ -43,8 +43,3 @@ pub struct DeviceVolume {
     pub level: f32,
     pub muted: bool,
 }
-
-pub fn perceptual_gain(volume: f32) -> f32 {
-    let v = volume.clamp(0.0, 1.0);
-    v * v * v
-}

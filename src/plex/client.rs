@@ -1,4 +1,4 @@
-use std::sync::RwLock;
+use std::sync::{OnceLock, RwLock};
 use std::thread;
 use std::time::Duration;
 
@@ -18,12 +18,20 @@ pub struct PlexClient {
     agent: Agent,
     /// kept separate from `agent` so media downloads aren't cut off by its global timeout,
     /// and long-lived so its connection pool skips a TCP/TLS handshake per track
-    stream_agent: Agent,
+    stream_agent: OnceLock<Agent>,
     /// swapped in place when the server is rediscovered at another address
     base: RwLock<String>,
     token: String,
     client_id: String,
-    device: String,
+}
+
+fn device_name() -> &'static str {
+    static NAME: OnceLock<String> = OnceLock::new();
+    NAME.get_or_init(|| {
+        std::fs::read_to_string("/proc/sys/kernel/hostname")
+            .map(|h| h.trim().to_owned())
+            .unwrap_or_else(|_| "rexamp".into())
+    })
 }
 
 impl PlexClient {
@@ -32,22 +40,12 @@ impl PlexClient {
             .timeout_global(Some(timeout))
             .build()
             .into();
-        // no per-read timeout here; the audio source restarts stalled downloads itself
-        let stream_agent = Agent::config_builder()
-            .timeout_connect(Some(Duration::from_secs(10)))
-            .timeout_recv_response(Some(Duration::from_secs(15)))
-            .build()
-            .into();
-        let device = std::fs::read_to_string("/proc/sys/kernel/hostname")
-            .map(|h| h.trim().to_owned())
-            .unwrap_or_else(|_| "rexamp".into());
         Self {
             agent,
-            stream_agent,
+            stream_agent: OnceLock::new(),
             base: RwLock::new(base.trim_end_matches('/').to_owned()),
             token: token.to_owned(),
             client_id: client_id.to_owned(),
-            device,
         }
     }
 
@@ -76,7 +74,7 @@ impl PlexClient {
             .header("X-Plex-Version", env!("CARGO_PKG_VERSION"))
             .header("X-Plex-Client-Identifier", &self.client_id)
             .header("X-Plex-Platform", "Linux")
-            .header("X-Plex-Device-Name", &self.device);
+            .header("X-Plex-Device-Name", device_name());
         if !self.token.is_empty() {
             r = r.header("X-Plex-Token", &self.token);
         }
@@ -96,17 +94,7 @@ impl PlexClient {
         self.get_json(path, query, None, false)
     }
 
-    pub fn get_range<T: DeserializeOwned>(
-        &self,
-        path: &str,
-        query: &[(&str, &str)],
-        start: u32,
-        size: u32,
-    ) -> Result<T> {
-        self.get_json(path, query, Some((start, size)), true)
-    }
-
-    fn get_json<T: DeserializeOwned>(
+    pub(super) fn get_json<T: DeserializeOwned>(
         &self,
         path: &str,
         query: &[(&str, &str)],
@@ -134,7 +122,15 @@ impl PlexClient {
 
     /// streaming GET for media downloads starting at byte `from`
     pub fn stream(&self, path: &str, from: u64) -> Result<Stream> {
-        let mut req = self.headers(self.stream_agent.get(self.url(path)), &[]);
+        // no per-read timeout here; the audio source restarts stalled downloads itself
+        let agent = self.stream_agent.get_or_init(|| {
+            Agent::config_builder()
+                .timeout_connect(Some(Duration::from_secs(10)))
+                .timeout_recv_response(Some(Duration::from_secs(15)))
+                .build()
+                .into()
+        });
+        let mut req = self.headers(agent.get(self.url(path)), &[]);
         if from > 0 {
             req = req.header("Range", format!("bytes={from}-"));
         }

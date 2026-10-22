@@ -13,7 +13,7 @@ use crate::app::state::{AppState, Focus, Modal, Screen};
 use crate::plex::models::{Album, Artist, Track};
 use crate::ui::help_bar::draw_help_bar;
 use crate::ui::player::{draw_maximized_player, draw_minimized_player};
-use crate::ui::string_formatting::{fit, truncate_left};
+use crate::ui::string_formatting::{fit, fmt_ms, truncate_left};
 
 mod help_bar;
 mod player;
@@ -237,7 +237,7 @@ fn render_line_marker(v: &View, i: usize, is_playing: bool) -> &'static str {
 
 fn item_is_playing(v: &View, i: usize, now_playing: &NowPlaying, queue: &Queue) -> bool {
     match &v.items {
-        Items::Artists(a) => now_playing.artist_playing_now(&a[i].title),
+        Items::Artists(a) => now_playing.artist_playing_now(&a[i].rating_key),
         Items::Albums(a) => now_playing.album_playing_now(&a[i].rating_key),
         Items::Tracks(ts) => match v.kind {
             ListKind::Queue => {
@@ -248,7 +248,7 @@ fn item_is_playing(v: &View, i: usize, now_playing: &NowPlaying, queue: &Queue) 
         },
         Items::Search(items) => match &items[i] {
             SearchItem::Header(_) => false,
-            SearchItem::Artist(a) => now_playing.artist_playing_now(&a.title),
+            SearchItem::Artist(a) => now_playing.artist_playing_now(&a.rating_key),
             SearchItem::Album(a) => now_playing.album_playing_now(&a.rating_key),
             SearchItem::Track(t) => now_playing.track_playing_now(&t.rating_key),
         },
@@ -286,7 +286,7 @@ pub(super) fn track_row(list_kind: &ListKind, t: &Track, multi_disc: bool) -> (S
         }
         _ => format!("{} — {}", t.title, t.grandparent_title),
     };
-    let right = t.duration_ms.map_or(String::new(), crate::fmt_ms);
+    let right = t.duration_ms.map_or(String::new(), fmt_ms);
 
     (left, right)
 }
@@ -308,7 +308,7 @@ fn row(v: &View, i: usize, queue: &Queue, multi_disc: bool) -> (String, String) 
         Items::Playlists(p) => {
             let p = &p[i];
             let count = p.leaf_count.map(|n| format!("{n} tracks"));
-            let dur = p.duration_ms.map(crate::fmt_ms);
+            let dur = p.duration_ms.map(fmt_ms);
             let right = [count, dur].into_iter().flatten().collect::<Vec<_>>();
             (p.title.clone(), right.join(" · "))
         }
@@ -317,7 +317,7 @@ fn row(v: &View, i: usize, queue: &Queue, multi_disc: bool) -> (String, String) 
 
 fn draw_help(f: &mut Frame) {
     let mut groups: Vec<(&str, Vec<String>)> = Vec::new();
-    for b in BINDINGS {
+    for b in BINDINGS.iter().filter(|b| b.show_in_help) {
         let desc = b.action.describe();
         match groups.iter_mut().find(|(d, _)| *d == desc) {
             Some((_, keys)) => keys.push(key_name(b)),

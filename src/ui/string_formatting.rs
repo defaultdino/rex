@@ -48,3 +48,11 @@ pub fn truncate_left(s: &str, width: usize) -> String {
     out.push('…');
     out.iter().rev().collect()
 }
+
+pub fn fmt_ms(ms: u64) -> String {
+    let secs = ms / 1000;
+    match secs / 3600 {
+        0 => format!("{}:{:02}", secs / 60, secs % 60),
+        h => format!("{h}:{:02}:{:02}", secs / 60 % 60, secs % 60),
+    }
+}

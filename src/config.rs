@@ -17,13 +17,6 @@ pub struct Config {
     pub accent_color: Option<String>,
     #[cfg(feature = "cast")]
     pub static_cast_devices: Option<Vec<Device>>,
-    client_identifier: Option<String>,
-    token: Option<String>,
-    server_url: Option<String>,
-    server_id: Option<String>,
-    server_token: Option<String>,
-    music_section: Option<String>,
-    volume: Option<f32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -96,23 +89,12 @@ impl Config {
 }
 
 impl SavedState {
-    /// loads the saved state
-    /// on first run, seeds it from the keys older versions kept in the config
-    pub fn load(cfg: &Config) -> Result<Self> {
+    /// loads the saved state, or a fresh one on first run
+    pub fn load() -> Result<Self> {
         if let Some(saved) = Self::read()? {
             return Ok(saved);
         }
-        let d = Self::default();
-        let saved = Self {
-            client_identifier: cfg.client_identifier.clone().unwrap_or(d.client_identifier),
-            token: cfg.token.clone(),
-            server_url: cfg.server_url.clone(),
-            server_id: cfg.server_id.clone(),
-            server_token: cfg.server_token.clone(),
-            music_section: cfg.music_section.clone(),
-            volume: cfg.volume.unwrap_or(d.volume),
-            queue: None,
-        };
+        let saved = Self::default();
         saved.save()?;
         Ok(saved)
     }

@@ -9,8 +9,6 @@ use cpal::{FromSample, SampleFormat, SizedSample, Stream, StreamConfig};
 use rtrb::{Consumer, Producer, RingBuffer};
 use tracing::{debug, error, info};
 
-use crate::backend::perceptual_gain;
-
 #[derive(Default)]
 struct Shared {
     played: AtomicU64,
@@ -192,4 +190,9 @@ where
         None,
     )?;
     Ok(stream)
+}
+
+fn perceptual_gain(volume: f32) -> f32 {
+    let v = volume.clamp(0.0, 1.0);
+    v * v * v
 }

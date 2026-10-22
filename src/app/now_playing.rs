@@ -15,10 +15,10 @@ pub struct NowPlaying {
 }
 
 impl NowPlaying {
-    pub fn artist_playing_now(&self, artist_title: &str) -> bool {
+    pub fn artist_playing_now(&self, artist_key: &str) -> bool {
         self.track
             .as_ref()
-            .is_some_and(|t| t.grandparent_title == *artist_title)
+            .is_some_and(|t| t.grandparent_rating_key == *artist_key)
     }
 
     pub fn album_playing_now(&self, album_key: &str) -> bool {

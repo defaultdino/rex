@@ -1,4 +1,4 @@
-use std::sync::mpsc::SyncSender;
+use std::sync::mpsc::{Sender, SyncSender};
 use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -6,11 +6,11 @@ use ratatui::style::Color;
 
 use super::browser::{Browser, ListKind, Selected, View};
 use super::keys::{
-    self, Action, GLOBAL_PLAYER_KEYS, HELP_KEYS, LIST_KEYS, MAXIMIZED_PLAYER_KEYS, NAV_KEYS,
-    QUEUE_KEYS, SEARCH_INPUT_KEYS,
+    self, Action, GLOBAL_PLAYER_KEYS, HELP_KEYS, LIST_KEYS, NAV_KEYS, QUEUE_KEYS, SEARCH_INPUT_KEYS,
 };
 use super::playback::Playback;
 use super::queue::SavedQueue;
+use super::reporting::Report;
 use super::{AddMode, ApiRequest, TrackSource};
 use crate::backend::PlayerCmd;
 #[cfg(feature = "cast")]
@@ -72,7 +72,6 @@ pub struct AppState {
     quit_armed: Option<Instant>,
     /// new server address found by rediscovery, saved to the state on exit
     pub server_url: Option<String>,
-    pub debug_line: bool,
     /// colour for focus, selection and highlights, from `accent_color` in the config
     pub accent: Color,
     #[cfg(feature = "cast")]
@@ -87,6 +86,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(
         api: SyncSender<ApiRequest>,
+        reports: Sender<Vec<Report>>,
         player: SyncSender<PlayerCmd>,
         volume: f32,
         saved: Option<SavedQueue>,
@@ -102,10 +102,9 @@ impl AppState {
             #[cfg(feature = "cast")]
             static_cast_devices,
             backend: 0,
-            playback: Playback::new(api, player, volume, saved),
+            playback: Playback::new(api, reports, player, volume, saved),
             quit_armed: None,
             server_url: None,
-            debug_line: false,
             accent: Color::Cyan,
             message: None,
             quit: false,
@@ -158,7 +157,7 @@ impl AppState {
             (Some(Modal::Help), _) => &[HELP_KEYS],
             #[cfg(feature = "cast")]
             (Some(Modal::Cast(_)), _) => &[keys::CAST_KEYS],
-            (None, Screen::Player) => &[MAXIMIZED_PLAYER_KEYS, GLOBAL_PLAYER_KEYS],
+            (None, Screen::Player) => &[GLOBAL_PLAYER_KEYS],
             (None, Screen::Browse(Focus::Sidebar)) => &[NAV_KEYS, GLOBAL_PLAYER_KEYS],
             (None, Screen::Browse(Focus::List)) => match self.browser.view().map(|v| &v.kind) {
                 Some(ListKind::Queue) => &[QUEUE_KEYS, NAV_KEYS, GLOBAL_PLAYER_KEYS],
@@ -240,7 +239,6 @@ impl AppState {
                 self.modal = Some(Modal::Search(String::new()));
             }
             Action::Help => self.modal = Some(Modal::Help),
-            Action::DebugLine => self.debug_line = !self.debug_line,
             Action::Quit => self.request_quit(),
             // Play is always shuffled when playing on Artist level
             Action::Play => self.add_selected(AddMode::PlayFromStart),

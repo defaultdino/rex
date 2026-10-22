@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::mpsc::{SyncSender, TrySendError};
+use std::sync::mpsc::{Sender, SyncSender, TrySendError};
 use std::time::Instant;
 
 use image::RgbImage;
@@ -28,6 +28,7 @@ pub struct Cover {
 /// the queue, what is playing, and the player thread that plays it
 pub struct Playback {
     api: SyncSender<ApiRequest>,
+    reports: Sender<Vec<Report>>,
     player: SyncSender<PlayerCmd>,
     pub queue: Queue,
     pub now: NowPlaying,
@@ -49,12 +50,14 @@ pub struct Playback {
 impl Playback {
     pub fn new(
         api: SyncSender<ApiRequest>,
+        reports: Sender<Vec<Report>>,
         player: SyncSender<PlayerCmd>,
         volume: f32,
         saved: Option<SavedQueue>,
     ) -> Self {
         let mut playback = Self {
             api,
+            reports,
             player,
             queue: Queue::default(),
             now: NowPlaying {
@@ -140,25 +143,21 @@ impl Playback {
         }
     }
 
-    /// one request per event so a worker sends them in order (e.g. stopped before playing)
-    fn report(&self, reports: Vec<Report>) {
-        if !reports.is_empty() && self.api.try_send(ApiRequest::Report(reports)).is_err() {
-            warn!("dropping playback reports, API queue full");
+    pub(super) fn report(&self, reports: Vec<Report>) {
+        if !reports.is_empty() && self.reports.send(reports).is_err() {
+            warn!("playback reporter is gone");
         }
     }
 
     pub fn play_index(&mut self, i: usize) {
-        if i >= self.queue.len() {
-            return;
-        }
-        let stopped = self.reporter.stopped();
-        self.report(stopped);
-        self.media_controls_dirty = true;
         let Some(e) = self.queue.entries.get(i) else {
             return;
         };
-        let track = e.track.clone();
-        self.loading = Some((e.id, track.rating_key.clone()));
+        let (id, track) = (e.id, e.track.clone());
+        let stopped = self.reporter.stopped();
+        self.report(stopped);
+        self.media_controls_dirty = true;
+        self.loading = Some((id, track.rating_key.clone()));
         self.queue.current = Some(i);
         self.enqueued = None;
         self.resume_ms = None;
@@ -451,7 +450,7 @@ impl Playback {
                 return self.play_index(0);
             }
             AddMode::PlayShuffled => {
-                self.queue.set_shuffle(true);
+                self.queue.shuffle = true;
                 self.queue.replace(tracks, None);
                 return self.play_index(0);
             }

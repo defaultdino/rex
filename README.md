@@ -34,4 +34,4 @@ press `?` inside the player to see all keybindings
 
 rexamp reads its settings from `~/.config/rexamp/config.toml` (or `$XDG_CONFIG_HOME/rexamp/config.toml`). Every key is optional, and `config.example.toml` describes each one.
 
-All rexamp state can be found in `~/.local/state/rexamp/state.json`. Coming from 1.5 or earlier, rexamp copies the login and server keys from `config.toml` there on first start; after that you can delete them from `config.toml`.
+All rexamp state can be found in `~/.local/state/rexamp/state.json`.

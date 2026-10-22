@@ -192,6 +192,11 @@ impl Queue {
             return None;
         }
         self.entries.swap(i, j);
+
+        if !self.shuffle {
+            self.unshuffled.swap(i, j);
+        }
+
         self.current = self.current.map(|c| match c {
             c if c == i => j,
             c if c == j => i,

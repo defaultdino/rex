@@ -89,7 +89,7 @@ impl Decoder {
             buf.copy_to_vec_interleaved(&mut self.scratch);
             let skip = (self.skip_frames * self.channels).min(self.scratch.len());
             self.skip_frames -= skip / self.channels.max(1);
-            super::to_stereo(&self.scratch[skip..], self.channels, out);
+            to_stereo(&self.scratch[skip..], self.channels, out);
             return Ok(true);
         }
     }
@@ -112,5 +112,17 @@ impl Decoder {
         let gap = (required.as_secs_f64() - actual.as_secs_f64()).max(0.0);
         self.skip_frames = (gap * self.rate as f64).round() as usize;
         Ok(required.as_millis().max(0) as u64)
+    }
+}
+
+fn to_stereo(src: &[f32], channels: usize, out: &mut Vec<f32>) {
+    match channels {
+        0 => {}
+        1 => out.extend(src.iter().flat_map(|&s| [s, s])),
+        2 => out.extend_from_slice(src),
+        n => out.extend(src.chunks_exact(n).flat_map(|f| {
+            let m = f.iter().sum::<f32>() / n as f32;
+            [m, m]
+        })),
     }
 }

@@ -29,7 +29,7 @@ impl PlexClient {
         start: u32,
         size: u32,
     ) -> Result<Page<T>> {
-        let c: Container<MetadataList> = self.get_range(path, query, start, size)?;
+        let c: Container<MetadataList> = self.get_json(path, query, Some((start, size)), true)?;
         let items: Vec<T> = c.mc.items.into_iter().map(T::from).collect();
         let total = c.mc.total_size.unwrap_or(start + items.len() as u32);
         Ok(Page { items, total })
@@ -42,13 +42,9 @@ impl PlexClient {
         Ok(c.mc.token)
     }
 
-    pub fn sections(&self) -> Result<Vec<Section>> {
-        let c: Container<Directories<Section>> = self.get("/library/sections", &[])?;
-        Ok(c.mc.items)
-    }
-
     pub fn music_sections(&self) -> Result<Vec<Section>> {
-        let mut s = self.sections()?;
+        let c: Container<Directories<Section>> = self.get("/library/sections", &[])?;
+        let mut s = c.mc.items;
         s.retain(|s| s.kind == "artist");
         Ok(s)
     }

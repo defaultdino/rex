@@ -22,7 +22,7 @@ impl PlayState {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Report {
     Timeline {
         rating_key: String,

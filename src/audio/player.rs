@@ -112,7 +112,7 @@ impl Player {
                 cmds.try_recv()
                     .map_err(|e| matches!(e, TryRecvError::Disconnected))
             } else if self.active() && !self.paused {
-                cmds.recv_timeout(IDLE_POLL)
+                cmds.recv_timeout(self.idle_wait())
                     .map_err(|e| matches!(e, RecvTimeoutError::Disconnected))
             } else {
                 cmds.recv().map_err(|_| true)
@@ -194,6 +194,11 @@ impl Player {
         !self.paused
             && (self.decoding.is_some() || self.ready_pos < self.ready.len())
             && self.out.free() >= self.out.capacity() / 4
+    }
+
+    fn idle_wait(&self) -> Duration {
+        let frames = (self.out.capacity() / 4).saturating_sub(self.out.free()) / 2;
+        Duration::from_millis(frames as u64 * 1000 / self.out.rate as u64).max(IDLE_POLL)
     }
 
     fn active(&self) -> bool {

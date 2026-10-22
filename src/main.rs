@@ -18,28 +18,8 @@ fn main() -> anyhow::Result<ExitCode> {
     setup_logging(options.log_level)?;
 
     let cfg = config::Config::load()?;
-    let mut saved = config::SavedState::load(&cfg)?;
+    let mut saved = config::SavedState::load()?;
 
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting");
     options.run(cfg, &mut saved)
-}
-
-pub fn fmt_ms(ms: u64) -> String {
-    let secs = ms / 1000;
-    match secs / 3600 {
-        0 => format!("{}:{:02}", secs / 60, secs % 60),
-        h => format!("{h}:{:02}:{:02}", secs / 60 % 60, secs % 60),
-    }
-}
-
-/// resident set size of this process in kB, 0 if unavailable
-pub fn rss_kb() -> u64 {
-    std::fs::read_to_string("/proc/self/status")
-        .ok()
-        .and_then(|s| {
-            s.lines()
-                .find_map(|l| l.strip_prefix("VmRSS:"))
-                .and_then(|v| v.trim().trim_end_matches(" kB").parse().ok())
-        })
-        .unwrap_or(0)
 }
