@@ -65,6 +65,7 @@ impl Position {
 
 pub struct Caster {
     plex: Arc<PlexClient>,
+    token: String,
     events: SyncSender<PlayerEvent>,
     pub outbox: Vec<(String, Payload, Option<u32>)>,
     pub conn: Conn,
@@ -86,9 +87,10 @@ pub struct Caster {
 }
 
 impl Caster {
-    pub fn new(plex: Arc<PlexClient>, events: SyncSender<PlayerEvent>) -> Self {
+    pub fn new(plex: Arc<PlexClient>, token: String, events: SyncSender<PlayerEvent>) -> Self {
         Self {
             plex,
+            token,
             events,
             outbox: Vec::new(),
             conn: Conn::Down,

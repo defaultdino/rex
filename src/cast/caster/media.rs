@@ -20,7 +20,7 @@ impl Caster {
         })?;
         let images = (!track.thumb.is_empty()).then(|| {
             vec![Image {
-                url: self.plex.url_with_token(&track.thumb),
+                url: self.plex.url_with_token(&track.thumb, &self.token),
                 height: None,
                 width: None,
             }]
@@ -35,7 +35,7 @@ impl Caster {
             ..Default::default()
         };
         Ok(MediaInformation {
-            content_id: self.plex.url_with_token(&track.part_key),
+            content_id: self.plex.url_with_token(&track.part_key, &self.token),
             content_type: content_type.into(),
             stream_type: StreamType::Buffered,
             duration: track.duration_ms.map(|d| d as f64 / 1000.0),

@@ -25,6 +25,9 @@ pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr) -> Result<(Channels, Receiver<()
     if loopback(&server) {
         bail!("rexamp reaches plex at {server}, which the device can't");
     }
+    let token = plex
+        .transient_token()
+        .context("getting a cast token from plex")?;
     let first = block_on(io::connect(ip)).with_context(|| format!("casting to {ip}"))?;
     let (cmd_tx, cmd_rx) = sync_channel(32);
     let (ev_tx, ev_rx) = sync_channel(256);
@@ -43,7 +46,7 @@ pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr) -> Result<(Channels, Receiver<()
     let (done_tx, done_rx) = std_channel::<()>();
     thread::Builder::new().name("cast".into()).spawn(move || {
         let _done = done_tx;
-        block_on(io::run(Caster::new(plex, ev_tx), ip, first, fwd_rx))
+        block_on(io::run(Caster::new(plex, token, ev_tx), ip, first, fwd_rx))
     })?;
     Ok(((cmd_tx, ev_rx), done_rx))
 }

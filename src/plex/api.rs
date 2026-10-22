@@ -35,6 +35,13 @@ impl PlexClient {
         Ok(Page { items, total })
     }
 
+    #[cfg(feature = "cast")]
+    pub fn transient_token(&self) -> Result<String> {
+        let query = [("type", "delegation"), ("scope", "all")];
+        let c: Container<super::models::TransientToken> = self.get("/security/token", &query)?;
+        Ok(c.mc.token)
+    }
+
     pub fn sections(&self) -> Result<Vec<Section>> {
         let c: Container<Directories<Section>> = self.get("/library/sections", &[])?;
         Ok(c.mc.items)

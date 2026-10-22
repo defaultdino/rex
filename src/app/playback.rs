@@ -539,7 +539,10 @@ impl Playback {
             return;
         };
         match result {
-            Ok(img) => c.art = Some(img),
+            Ok(img) => {
+                c.art = Some(img);
+                self.media_controls_dirty = true;
+            }
             Err(e) => warn!("cover art: {e}"),
         }
     }

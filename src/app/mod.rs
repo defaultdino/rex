@@ -3,7 +3,7 @@ pub mod browser;
 pub mod cast;
 pub mod keys;
 pub mod now_playing;
-mod playback;
+pub mod playback;
 pub mod queue;
 mod reporting;
 pub mod state;
@@ -165,13 +165,7 @@ fn spawn_tui(
             .spawn_scoped(s, move || {
                 // ratatui::init installs a panic hook that restores the terminal
                 let mut terminal = ratatui::init();
-                let result = event_loop(
-                    &mut terminal,
-                    &mut state,
-                    &rx,
-                    media_controls.as_mut(),
-                    client,
-                );
+                let result = event_loop(&mut terminal, &mut state, &rx, media_controls.as_mut());
                 ratatui::restore();
 
                 shutdown(&mut state, client, saved)?;
@@ -220,7 +214,6 @@ fn event_loop(
     state: &mut AppState,
     rx: &Receiver<AppEvent>,
     mut media_controls: Option<&mut MediaControls>,
-    client: &PlexClient,
 ) -> Result<()> {
     loop {
         terminal.draw(|f| crate::ui::draw(f, state))?;
@@ -241,7 +234,7 @@ fn event_loop(
         if playback.media_controls_dirty {
             playback.media_controls_dirty = false;
             if let Some(m) = media_controls.as_deref_mut() {
-                m.update(&playback.now, client);
+                m.update(&playback.now, playback.cover.as_ref());
             }
         }
         if state.quit {

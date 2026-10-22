@@ -489,7 +489,6 @@ fn open(
     if track.part_key.is_empty() {
         anyhow::bail!("{} has no playable media", track.title);
     }
-    // never put server-supplied strings in the path: rating_key could be "../../x"
     let path = cache_dir.join(SEQ.fetch_add(1, Ordering::Relaxed).to_string());
     let ev = events.clone();
     let on_buffering = Arc::new(move |b: bool| {

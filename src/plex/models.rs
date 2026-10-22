@@ -8,6 +8,12 @@ pub struct Container<T> {
     pub mc: T,
 }
 
+#[cfg(feature = "cast")]
+#[derive(Deserialize)]
+pub struct TransientToken {
+    pub token: String,
+}
+
 #[derive(Deserialize)]
 pub struct Directories<T> {
     #[serde(rename = "Directory", default = "Vec::new")]

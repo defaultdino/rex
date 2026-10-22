@@ -178,10 +178,11 @@ impl PlexClient {
             .map_err(|e| describe(e, &format!("GET {}", self.url(path))))
     }
 
+    #[cfg(feature = "cast")]
     /// absolute URL for `path` with the token in the query, for consumers that can't send headers
-    pub fn url_with_token(&self, path: &str) -> String {
+    pub fn url_with_token(&self, path: &str, token: &str) -> String {
         let sep = if path.contains('?') { '&' } else { '?' };
-        format!("{}{path}{sep}X-Plex-Token={}", self.base(), self.token)
+        format!("{}{path}{sep}X-Plex-Token={token}", self.base())
     }
 
     pub fn post<T: DeserializeOwned>(&self, path: &str, query: &[(&str, &str)]) -> Result<T> {
