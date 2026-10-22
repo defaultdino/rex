@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   BIN_NAME: rexamp
@@ -19,22 +19,25 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       release: ${{ steps.version.outputs.release }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Version
         id: version
         run: .github/scripts/release-version.sh
       - name: Install system libraries
         # libssl-dev: the optional `cast` feature links the system OpenSSL
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libssl-dev pkg-config
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo clippy --all-targets --features cast -- -D warnings
 
   package:
+    if: github.event_name == 'push'
     needs: check
     strategy:
       fail-fast: false
@@ -48,19 +51,21 @@ jobs:
             arch: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install system libraries
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: ${{ matrix.target }}
 
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cargo-deb,cargo-generate-rpm
 
@@ -91,7 +96,7 @@ jobs:
           cp *.tar.gz dist/
           ls -lh dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: packages-${{ matrix.arch }}
           path: dist/*
@@ -117,7 +122,7 @@ jobs:
               tar xzf dist/*.tar.gz && install -m755 */"$BIN_NAME" /usr/local/bin/
     container: ${{ matrix.image }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: packages-x86_64
           path: dist
@@ -132,29 +137,34 @@ jobs:
     if: github.event_name == 'push' && needs.check.outputs.release == 'true'
     needs: [check, smoke-test]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       VERSION: ${{ needs.check.outputs.version }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: packages-*
           path: dist
           merge-multiple: true
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           path: src
+          persist-credentials: false
       - name: Vendor crates
         run: |
-          cargo install --locked cargo-vendor-filterer
+          cargo install --locked cargo-vendor-filterer --version 0.5.18
           cd src
           cargo vendor-filterer --platform '*-unknown-linux-*' ../vendor
           cd ..
           tar cJf "dist/${BIN_NAME}-${VERSION}-vendor.tar.xz" vendor
       - name: Checksums
         run: cd dist && sha256sum * > SHA256SUMS
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ env.VERSION }}
-          target_commitish: ${{ github.sha }}
-          files: dist/*
-          generate_release_notes: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "v$VERSION" dist/*
+          --repo "$GITHUB_REPOSITORY"
+          --target "$GITHUB_SHA"
+          --generate-notes
