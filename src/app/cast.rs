@@ -152,7 +152,7 @@ impl AppState {
 
         let spawned = thread::Builder::new().name("cast".into()).spawn(move || {
             let (done_tx, done) = channel();
-            
+
             let (result, session) =
                 match crate::cast::connect(plex, ip, Events::new(events.clone(), id)) {
                     Ok((player, session)) => (Ok((player, done)), Some(session)),
@@ -166,7 +166,7 @@ impl AppState {
                 session();
             }
         });
-        
+
         match spawned {
             Ok(_) => self.info(format!("connecting to {label}…")),
             Err(e) => self.error(format!("can't cast to {label}: {e}")),
