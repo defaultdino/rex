@@ -194,7 +194,7 @@ impl Queue {
         self.entries.swap(i, j);
 
         if !self.shuffle {
-            self.unshuffled.swap(i, j);
+            self.unshuffled = self.entries.iter().map(|e| e.id).collect();
         }
 
         self.current = self.current.map(|c| match c {
@@ -269,4 +269,30 @@ impl Queue {
 /// maps each id to its index in `ids`
 fn positions(ids: impl IntoIterator<Item = u64>) -> HashMap<u64, usize> {
     ids.into_iter().enumerate().map(|(i, id)| (id, i)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn titles(q: &Queue) -> Vec<&str> {
+        q.entries.iter().map(|e| e.track.title.as_str()).collect()
+    }
+    
+    #[test]
+    fn moves_survive_shuffle_toggle_and_heal_stale_order() {
+        let mut q = Queue::default();
+        let tracks = ["a", "b", "c", "d"].map(|t| {
+            Arc::new(Track {
+                title: t.into(),
+                ..Track::default()
+            })
+        });
+        q.replace(tracks.to_vec(), None);
+        q.unshuffled.reverse(); // out of sync, as saved by older versions
+        q.move_entry(0, true);
+        q.set_shuffle(true);
+        q.set_shuffle(false);
+        assert_eq!(titles(&q), ["b", "a", "c", "d"]);
+    }
 }
