@@ -131,7 +131,7 @@ fn decode(
     let mut ended = false;
     loop {
         let mut seek = seeks.try_iter().last();
-        
+
         if ended && seek.is_none() {
             let Ok(s) = seeks.recv() else { return };
             seek = Some(seeks.try_iter().last().unwrap_or(s));
