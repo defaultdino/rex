@@ -9,18 +9,24 @@ pub use discover::{Device, discover};
 
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, channel as std_channel, sync_channel};
+use std::sync::mpsc::{SyncSender, sync_channel};
 use std::thread;
 
 use anyhow::{Context, Result, bail};
 use smol::block_on;
 use smol::channel;
 
-use crate::backend::Channels;
+use crate::backend::{Events, PlayerCmd};
 use crate::plex::PlexClient;
 use caster::Caster;
 
-pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr) -> Result<(Channels, Receiver<()>)> {
+/// connects to the device and returns its command sender and the session, which runs on
+/// the calling thread until the device disconnects or the sender is dropped
+pub fn connect(
+    plex: Arc<PlexClient>,
+    ip: IpAddr,
+    events: Events,
+) -> Result<(SyncSender<PlayerCmd>, impl FnOnce())> {
     let server = plex.base();
     if loopback(&server) {
         bail!("rexamp reaches plex at {server}, which the device can't");
@@ -30,7 +36,6 @@ pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr) -> Result<(Channels, Receiver<()
         .context("getting a cast token from plex")?;
     let first = block_on(io::connect(ip)).with_context(|| format!("casting to {ip}"))?;
     let (cmd_tx, cmd_rx) = sync_channel(32);
-    let (ev_tx, ev_rx) = sync_channel(256);
     let (fwd_tx, fwd_rx) = channel::bounded(32);
 
     thread::Builder::new()
@@ -43,12 +48,9 @@ pub fn spawn(plex: Arc<PlexClient>, ip: IpAddr) -> Result<(Channels, Receiver<()
                 }
             }
         })?;
-    let (done_tx, done_rx) = std_channel::<()>();
-    thread::Builder::new().name("cast".into()).spawn(move || {
-        let _done = done_tx;
-        block_on(io::run(Caster::new(plex, token, ev_tx), ip, first, fwd_rx))
-    })?;
-    Ok(((cmd_tx, ev_rx), done_rx))
+
+    let session = move || block_on(io::run(Caster::new(plex, token, events), ip, first, fwd_rx));
+    Ok((cmd_tx, session))
 }
 
 fn loopback(url: &str) -> bool {

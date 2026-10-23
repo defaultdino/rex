@@ -15,7 +15,7 @@ use super::decoder::Decoder;
 use super::output::Output;
 use super::resample::Resampler;
 use super::source::CachedHttpSource;
-use crate::backend::{Channels, PlayerCmd, PlayerEvent};
+use crate::backend::{Events, PlayerCmd, PlayerEvent};
 use crate::plex::PlexClient;
 use crate::plex::models::Track;
 
@@ -24,9 +24,13 @@ const IDLE_POLL: Duration = Duration::from_millis(20);
 const FILL_BUDGET: Duration = Duration::from_millis(50);
 const DECODE_AHEAD_PACKETS: usize = 32;
 
-pub fn spawn(client: Arc<PlexClient>, cache_dir: PathBuf, volume: f32) -> Result<Channels> {
+pub fn spawn(
+    client: Arc<PlexClient>,
+    cache_dir: PathBuf,
+    volume: f32,
+    events: Events,
+) -> Result<SyncSender<PlayerCmd>> {
     let (cmd_tx, cmd_rx) = sync_channel(32);
-    let (ev_tx, ev_rx) = sync_channel(256);
     let (ready_tx, ready_rx) = channel();
     let _ = std::fs::remove_dir_all(&cache_dir);
     thread::Builder::new()
@@ -44,7 +48,7 @@ pub fn spawn(client: Arc<PlexClient>, cache_dir: PathBuf, volume: f32) -> Result
                 out,
                 client,
                 cache_dir,
-                events: ev_tx,
+                events,
                 decoding: None,
                 next: None,
                 starved: false,
@@ -63,7 +67,7 @@ pub fn spawn(client: Arc<PlexClient>, cache_dir: PathBuf, volume: f32) -> Result
             .run(cmd_rx);
         })?;
     ready_rx.recv().context("player thread died")??;
-    Ok((cmd_tx, ev_rx))
+    Ok(cmd_tx)
 }
 
 enum Chunk {
@@ -90,7 +94,7 @@ impl DecodeThread {
         client: Arc<PlexClient>,
         cache_dir: PathBuf,
         track: Arc<Track>,
-        events: SyncSender<PlayerEvent>,
+        events: Events,
     ) -> Self {
         let (chunk_tx, chunks) = sync_channel(DECODE_AHEAD_PACKETS);
         let (seeks, seek_rx) = channel();
@@ -116,7 +120,7 @@ fn decode(
     client: &Arc<PlexClient>,
     cache_dir: &std::path::Path,
     track: Arc<Track>,
-    events: &SyncSender<PlayerEvent>,
+    events: &Events,
     seeks: &Receiver<(u64, u64)>,
     out: &SyncSender<Chunk>,
 ) {
@@ -166,7 +170,7 @@ struct Player {
     out: Output,
     client: Arc<PlexClient>,
     cache_dir: PathBuf,
-    events: SyncSender<PlayerEvent>,
+    events: Events,
     decoding: Option<DecodeThread>,
     next: Option<DecodeThread>,
     starved: bool,
@@ -566,7 +570,7 @@ fn open(
     client: &Arc<PlexClient>,
     cache_dir: &std::path::Path,
     track: &Track,
-    events: &SyncSender<PlayerEvent>,
+    events: &Events,
 ) -> Result<Decoder> {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     if track.part_key.is_empty() {

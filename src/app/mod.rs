@@ -19,7 +19,7 @@ use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use tracing::warn;
 
 use crate::audio::player;
-use crate::backend::PlayerEvent;
+use crate::backend::{Events, PlayerEvent};
 #[cfg(feature = "cast")]
 use crate::cast::Device;
 use crate::config::{self, SavedState};
@@ -118,18 +118,21 @@ pub fn run(
         .clone()
         .context("no music section selected")?;
 
-    let (tx, rx) = sync_channel(64);
+    let (tx, rx) = sync_channel(256);
     let (api_tx, api_rx) = sync_channel(16);
 
     let cache = config::dirs()?.cache_dir().join("stream");
-    let (player_tx, player_rx) = player::spawn(client.clone(), cache, saved.volume)?;
+    let player_tx = player::spawn(
+        client.clone(),
+        cache,
+        saved.volume,
+        Events::new(tx.clone(), 0),
+    )?;
 
     spawn_api_workers(client.clone(), section, saved, api_rx, tx.clone())?;
 
     let (report_tx, report_rx) = channel();
     let reports_done = spawn_reporter(client.clone(), report_rx)?;
-
-    spawn_forwarder(player_rx, tx.clone(), 0)?;
 
     #[cfg(unix)]
     spawn_signals(tx.clone())?;
@@ -351,21 +354,6 @@ fn spawn_reporter(client: Arc<PlexClient>, rx: Receiver<Vec<Report>>) -> Result<
             }
         })?;
     Ok(done_rx)
-}
-
-fn spawn_forwarder(rx: Receiver<PlayerEvent>, tx: SyncSender<AppEvent>, id: u64) -> Result<()> {
-    thread::Builder::new()
-        .name("player-events".into())
-        .spawn(move || forward(rx, tx, id))?;
-    Ok(())
-}
-
-fn forward(rx: Receiver<PlayerEvent>, tx: SyncSender<AppEvent>, id: u64) {
-    for ev in rx {
-        if tx.send(AppEvent::Player(id, ev)).is_err() {
-            break;
-        }
-    }
 }
 
 fn spawn_input(tx: SyncSender<AppEvent>) -> Result<()> {

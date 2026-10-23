@@ -2,11 +2,32 @@
 //! device. A backend runs on its own thread, takes `PlayerCmd`s and answers with `PlayerEvent`s
 
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::mpsc::{SendError, SyncSender, TrySendError};
 
+use crate::app::AppEvent;
 use crate::plex::models::Track;
 
-pub type Channels = (SyncSender<PlayerCmd>, Receiver<PlayerEvent>);
+/// sends a backends events into the apps channel, tagged with the backends id so the app
+/// can ignore any backends it has switched away from
+#[derive(Clone)]
+pub struct Events {
+    tx: SyncSender<AppEvent>,
+    id: u64,
+}
+
+impl Events {
+    pub fn new(tx: SyncSender<AppEvent>, id: u64) -> Self {
+        Self { tx, id }
+    }
+
+    pub fn send(&self, ev: PlayerEvent) -> Result<(), SendError<AppEvent>> {
+        self.tx.send(AppEvent::Player(self.id, ev))
+    }
+
+    pub fn try_send(&self, ev: PlayerEvent) -> Result<(), TrySendError<AppEvent>> {
+        self.tx.try_send(AppEvent::Player(self.id, ev))
+    }
+}
 
 #[derive(Debug)]
 pub enum PlayerCmd {

@@ -1,13 +1,13 @@
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::mpsc::{Receiver, SyncSender, channel};
 use std::thread;
 use std::time::Duration;
 
+use super::AppEvent;
 use super::keys::Action;
 use super::state::{AppState, Modal};
-use super::{AppEvent, forward};
-use crate::backend::PlayerCmd;
+use crate::backend::{Events, PlayerCmd};
 use crate::cast::Device;
 use crate::plex::PlexClient;
 
@@ -149,20 +149,24 @@ impl AppState {
         let id = self.cast.request;
         let (events, plex) = (self.cast.events.clone(), self.cast.plex.clone());
         let label = name.clone();
-        let spawned = thread::Builder::new()
-            .name("cast-connect".into())
-            .spawn(move || {
-                let (result, rx) = match crate::cast::spawn(plex, ip) {
-                    Ok(((player, rx), done)) => (Ok((player, done)), Some(rx)),
+
+        let spawned = thread::Builder::new().name("cast".into()).spawn(move || {
+            let (done_tx, done) = channel();
+            
+            let (result, session) =
+                match crate::cast::connect(plex, ip, Events::new(events.clone(), id)) {
+                    Ok((player, session)) => (Ok((player, done)), Some(session)),
                     Err(e) => (Err(format!("{e:#}")), None),
                 };
-                // the app drops a session's events until it has switched to it,
-                // so they must not overtake Connected
-                let _ = events.send(AppEvent::Cast(CastEvent::Connected { id, name, result }));
-                if let Some(rx) = rx {
-                    forward(rx, events, id);
-                }
-            });
+
+            // drop all session events until switch is done
+            let _ = events.send(AppEvent::Cast(CastEvent::Connected { id, name, result }));
+            if let Some(session) = session {
+                let _done = done_tx;
+                session();
+            }
+        });
+        
         match spawned {
             Ok(_) => self.info(format!("connecting to {label}…")),
             Err(e) => self.error(format!("can't cast to {label}: {e}")),
