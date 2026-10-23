@@ -6,7 +6,7 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::browser::{Items, ListKind, SearchItem, Section, View};
-use crate::app::keys::{BINDINGS, key_name};
+use crate::app::keys::{BINDINGS, SEARCH_INPUT_KEYS, key_name};
 use crate::app::now_playing::NowPlaying;
 use crate::app::queue::Queue;
 use crate::app::state::{AppState, Focus, Modal, Screen};
@@ -317,7 +317,10 @@ fn row(v: &View, i: usize, queue: &Queue, multi_disc: bool) -> (String, String) 
 
 fn draw_help(f: &mut Frame) {
     let mut groups: Vec<(&str, Vec<String>)> = Vec::new();
-    for b in BINDINGS.iter().filter(|b| b.show_in_help) {
+    for b in BINDINGS
+        .iter()
+        .filter(|b| !SEARCH_INPUT_KEYS.contains(&b.action))
+    {
         let desc = b.action.describe();
         match groups.iter_mut().find(|(d, _)| *d == desc) {
             Some((_, keys)) => keys.push(key_name(b)),
