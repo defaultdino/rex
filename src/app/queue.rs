@@ -278,7 +278,7 @@ mod tests {
     fn titles(q: &Queue) -> Vec<&str> {
         q.entries.iter().map(|e| e.track.title.as_str()).collect()
     }
-    
+
     #[test]
     fn moves_survive_shuffle_toggle_and_heal_stale_order() {
         let mut q = Queue::default();
