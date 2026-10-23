@@ -127,8 +127,17 @@ fn decode(
             return;
         }
     };
+    // after `End` we stay alive for seeks until the player drops the track
+    let mut ended = false;
     loop {
-        if let Some((generation, ms)) = seeks.try_iter().last() {
+        let mut seek = seeks.try_iter().last();
+        
+        if ended && seek.is_none() {
+            let Ok(s) = seeks.recv() else { return };
+            seek = Some(seeks.try_iter().last().unwrap_or(s));
+        }
+
+        if let Some((generation, ms)) = seek {
             let reached_ms = dec.seek(ms).map_err(|e| format!("seek: {e:#}"));
             if out
                 .send(Chunk::Seeked {
@@ -149,8 +158,9 @@ fn decode(
                 Chunk::Failed(format!("{}: {e:#}", track.title))
             }
         };
-        let last = !matches!(chunk, Chunk::Pcm(..));
-        if out.send(chunk).is_err() || last {
+        let failed = matches!(chunk, Chunk::Failed(_));
+        ended = matches!(chunk, Chunk::End);
+        if out.send(chunk).is_err() || failed {
             return;
         }
     }
@@ -451,7 +461,7 @@ impl Player {
             };
             let (track, awaiting_seek) = (cur.track.clone(), cur.awaiting_seek);
             match chunk {
-                Chunk::Pcm(..) if awaiting_seek => {}
+                Chunk::Pcm(..) | Chunk::End if awaiting_seek => {}
                 Chunk::Pcm(rate, pcm) => {
                     if !cur.start_queued {
                         cur.start_queued = true;
